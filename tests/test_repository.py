@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import pytest
 import pytest_asyncio
-from furiousapi.core.db.exceptions import EntityAlreadyExistsError, EntityNotFoundError
-from furiousapi.core.pagination import CursorPaginationParams
-from furiousapi.core.responses import BulkItemStatusEnum
+from bson import ObjectId
+
+from furiousapi.db import EntityAlreadyExistsError, EntityNotFoundError
+from furiousapi.api.pagination import CursorPaginationParams
+from furiousapi.api.responses import BulkItemStatusEnum
 
 import beanie
 from beanie import Document, PydanticObjectId
@@ -18,7 +20,7 @@ from tests.utils import get_first_doc_from_cache
 if TYPE_CHECKING:
     import motor.core
     from _pytest.fixtures import FixtureRequest
-    from furiousapi.core.db.fields import SortableFieldEnum
+    from furiousapi.db.fields import SortableFieldEnum
 
 PAGINATION = 5
 CACHE_KEY = "mongo_docs"
@@ -366,7 +368,7 @@ async def test_bulk_create():
     assert not response.has_errors
     for i in range(size):
         assert response.items[i].status == BulkItemStatusEnum.OK
-        assert isinstance(response.items[i].id, PydanticObjectId)
+        assert isinstance(response.items[i].id, ObjectId)
 
 
 @pytest.mark.asyncio()

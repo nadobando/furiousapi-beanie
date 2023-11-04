@@ -1,5 +1,12 @@
-from furiousapi.core.config import BaseConnectionSettings, MongoDBDsn
 from pydantic import BaseModel, Field
+from pydantic.networks import MultiHostDsn
+
+from furiousapi.core.config import BaseConnectionSettings
+
+
+class MongoDBDsn(MultiHostDsn):
+    allowed_schemes = "mongodb"
+    user_required = False
 
 
 class MongoDBConnectionOptions(BaseModel):

@@ -15,23 +15,23 @@ from typing import (
 )
 
 from flatten_dict import unflatten
-from furiousapi.core.db.exceptions import (
+from furiousapi.db.exceptions import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
     FuriousBulkError,
 )
-from furiousapi.core.db.repository import (
+from furiousapi.db.repository import (
     BaseRepository,
     ModelDependency,
     RepositoryConfig,
 )
-from furiousapi.core.db.utils import create_subset_model
-from furiousapi.core.pagination import (
+from furiousapi.db.utils import create_subset_model
+from furiousapi.api.pagination import (
     AllPaginationStrategies,
     PaginatedResponse,
     PaginationStrategyEnum,
 )
-from furiousapi.core.responses import (
+from furiousapi.api.responses import (
     BulkItemError,
     BulkItemSuccess,
     BulkResponseModel,
@@ -102,7 +102,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             return True
 
         if should_error:
-            raise EntityNotFoundError(identifiers)
+            raise EntityNotFoundError(self.__model__,identifiers)
         return False
 
     async def get(
@@ -142,7 +142,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         else:
             query = self.__model__.find()
 
-        if not sorting and pagination.type == PaginationStrategyEnum.CURSOR:
+        if not sorting and pagination.pagination_type == PaginationStrategyEnum.CURSOR:
             sorting = [+self.__sort__("id")]
 
         for i in cast(List["TSortableFields"], sorting):
@@ -150,7 +150,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
                 projection.append(i)
 
         projection = projection and unflatten({x.value: 1 for x in projection}, splitter=lambda x: x.split("."))
-        if projection and pagination.type == PaginationStrategyEnum.CURSOR:
+        if projection and pagination.pagination_type == PaginationStrategyEnum.CURSOR:
             projection[self.__model__.id] = 1
 
         returned_model = projection and create_subset_model(self.__model__, projection) or self.__model__
@@ -162,24 +162,24 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             "id_fields": ["id"],
             "sort_enum": self.__sort__,
         }
-        paginator = get_paginator(pagination.type)(**init_params)
+        paginator = get_paginator(pagination.pagination_type)(**init_params)
         return await paginator.get_page(query, pagination.limit, pagination.next)
 
-    async def add(self, instance: TDocument, session: "ClientSession" = None, **kwargs) -> TDocument:
+    async def add(self, entity: TDocument, session: "ClientSession" = None, **kwargs) -> TDocument:
         try:
-            return await self.__model__.insert_one(instance, session=session, **kwargs)
+            return await self.__model__.insert_one(entity, session=session, **kwargs)
         except DuplicateKeyError as exc:
-            raise EntityAlreadyExistsError(self.__model__) from exc
+            raise EntityAlreadyExistsError(self.__model__, entity.id) from exc
 
-    async def delete(self, instance: TDocument) -> None:
-        await self.__model__.delete(instance)
+    async def delete(self, entity: TDocument, **_) -> None:
+        await self.__model__.delete(entity)
 
-    # noinspection PyMethodMayBeStatic
-    async def update(self, instance: TDocument, changes: Set, bulk_writer: BulkWriter = None) -> Document:
+    # noinspection PyMethodOverriding
+    async def update(self, entity: TDocument, changes: Set, bulk_writer: Optional[BulkWriter] = None) -> Optional[TDocument]:
         try:
-            return await instance.update(changes, bulk_writer=bulk_writer)
+            return await entity.update(changes, bulk_writer=bulk_writer)
         except DocumentNotFound as e:
-            raise EntityNotFoundError(instance.id) from e
+            raise EntityNotFoundError(self.__model__, entity.id) from e
 
     async def bulk_create(self, bulk: List[Document]) -> BulkResponseModel:
         bulk_copy = bulk.copy()

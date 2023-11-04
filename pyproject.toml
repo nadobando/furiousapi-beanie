@@ -76,7 +76,7 @@ version = "0.1.0"
 [tool.poetry.dependencies]
 beanie = {version = "^1.19.2"}
 flatten-dict = {version = "^0.4.2"}
-furiousapi-core = {git = "https://github.com/nadobando/furiousapi-core.git", develop = true, branch="main"}
+furiousapi-core = {version="^0",  source = "test" ,allow-prereleases=true}
 pydantic = "^1.10.13"
 # core
 python = "^3.9.5"
@@ -169,3 +169,37 @@ ignore-variadic-names = true
 
 [tool.ruff.pyupgrade]
 keep-runtime-typing = true
+
+
+[tool.semantic_release]
+version_toml = [
+  "pyproject.toml:tool.poetry.version"
+]
+version_variables = [
+  "pydango/__init__.py:__version__"
+]
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.dev]
+match = "dev"
+prerelease = true
+prerelease_token = "dev"
+
+
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+  "^ci:.*",
+  "^(?!feat:|fix:|perf:|refactor:).*$"
+]
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = false
+
+
+[[tool.poetry.source]]
+name = "test"
+url = "https://test.pypi.org/simple/"
+secondary = true

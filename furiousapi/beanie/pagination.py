@@ -22,17 +22,17 @@ from typing import (
 )
 
 from bson import ObjectId
-from furiousapi.core.api.error_details import BadRequestHttpErrorDetails
-from furiousapi.core.api.exceptions import FuriousAPIError
+from furiousapi.api.error_responses import BadRequestHttpErrorResponse
+from furiousapi.api.exceptions import FuriousAPIError
 from furiousapi.core.config import get_settings
-from furiousapi.core.db.pagination import (
+from furiousapi.db.pagination import (
     BaseCursorPagination,
     BaseRelayPagination,
     Cursor,
     PaginatorMixin,
 )
 from furiousapi.core.fields import SortingDirection
-from furiousapi.core.pagination import PaginatedResponse, PaginationStrategyEnum
+from furiousapi.api.pagination import PaginatedResponse, PaginationStrategyEnum
 
 from beanie import Document, PydanticObjectId
 from beanie.operators import And, Or
@@ -42,7 +42,7 @@ from .sorting import _convert_sort
 if TYPE_CHECKING:
     from types import GenericAlias
 
-    from furiousapi.core.db.fields import SortableFieldEnum
+    from furiousapi.db.fields import SortableFieldEnum
 
     from beanie.odm.documents import DocType
     from beanie.odm.fields import ExpressionField
@@ -313,5 +313,5 @@ def get_paginator(
     if not isinstance(strategy, Enum):
         strategy = PaginationStrategyEnum[strategy]
     if not (paginator := PAGINATION_MAPPING.get(strategy)):
-        raise FuriousAPIError(BadRequestHttpErrorDetails(detail=f"pagination strategy {strategy} not found"))
+        raise FuriousAPIError(BadRequestHttpErrorResponse(detail=f"pagination strategy {strategy} not found"))
     return paginator

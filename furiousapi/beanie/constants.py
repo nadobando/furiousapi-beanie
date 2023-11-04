@@ -1,6 +1,6 @@
 from typing import Dict
 
-from furiousapi.core.db.fields import SortingDirection
+from furiousapi.db.fields import SortingDirection
 
 from beanie.odm.enums import SortDirection
 
