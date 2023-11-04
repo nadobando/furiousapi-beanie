@@ -103,7 +103,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
                     if added:
                         break
                     try:
-                        if any(map(lambda x: sub_origin is x, (dict, NoneType))):
+                        if any(map(lambda x: sub_origin is x, (dict, NoneType))):  # noqa: C417
                             # TODO: what to do here?
                             continue
                         if args := typing.get_args(sub_origin):

@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 import pytest
 import pytest_asyncio
 from bson import ObjectId
-
-from furiousapi.db import EntityAlreadyExistsError, EntityNotFoundError
 from furiousapi.api.pagination import CursorPaginationParams
 from furiousapi.api.responses import BulkItemStatusEnum
+from furiousapi.db import EntityAlreadyExistsError, EntityNotFoundError
 
 import beanie
 from beanie import Document, PydanticObjectId

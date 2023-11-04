@@ -24,15 +24,15 @@ from typing import (
 from bson import ObjectId
 from furiousapi.api.error_responses import BadRequestHttpErrorResponse
 from furiousapi.api.exceptions import FuriousAPIError
+from furiousapi.api.pagination import PaginatedResponse, PaginationStrategyEnum
 from furiousapi.core.config import get_settings
+from furiousapi.core.fields import SortingDirection
 from furiousapi.db.pagination import (
     BaseCursorPagination,
     BaseRelayPagination,
     Cursor,
     PaginatorMixin,
 )
-from furiousapi.core.fields import SortingDirection
-from furiousapi.api.pagination import PaginatedResponse, PaginationStrategyEnum
 
 from beanie import Document, PydanticObjectId
 from beanie.operators import And, Or
@@ -175,7 +175,9 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     ) -> BaseFindOperator:
         hint = self.get_model_field_hint(cursor[0])
         value = self.cast(hint, cursor[1])
-        is_nullable = any([issubclass(i, type(None)) for i in get_args(hint) if str(cursor[0]) not in self.id_fields])
+        is_nullable = any(
+            [issubclass(i, type(None)) for i in get_args(hint) if str(cursor[0]) not in self.id_fields]  # noqa: C419
+        )
 
         if direction == SortingDirection.ASCENDING:
             if value is None:
@@ -186,7 +188,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
             current_clause = (
                 self._handle_nullable(column, value, is_nullable=is_nullable) if value is not None else column > value
             )
-        else: # noqa: PLR5501
+        else:  # noqa: PLR5501
             if value is None:
                 if is_index_query:
                     return Or(column.__ne__(None), column < value)

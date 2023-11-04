@@ -15,17 +15,6 @@ from typing import (
 )
 
 from flatten_dict import unflatten
-from furiousapi.db.exceptions import (
-    EntityAlreadyExistsError,
-    EntityNotFoundError,
-    FuriousBulkError,
-)
-from furiousapi.db.repository import (
-    BaseRepository,
-    ModelDependency,
-    RepositoryConfig,
-)
-from furiousapi.db.utils import create_subset_model
 from furiousapi.api.pagination import (
     AllPaginationStrategies,
     PaginatedResponse,
@@ -38,6 +27,13 @@ from furiousapi.api.responses import (
     BulkResponseModelUnion,
 )
 from furiousapi.core.types import TModelFields, TSortableFields
+from furiousapi.db.exceptions import (
+    EntityAlreadyExistsError,
+    EntityNotFoundError,
+    FuriousBulkError,
+)
+from furiousapi.db.repository import BaseRepository, ModelDependency, RepositoryConfig
+from furiousapi.db.utils import create_subset_model
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 from pymongo.errors import BulkWriteError, DuplicateKeyError
@@ -102,7 +98,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             return True
 
         if should_error:
-            raise EntityNotFoundError(self.__model__,identifiers)
+            raise EntityNotFoundError(self.__model__, identifiers)
         return False
 
     async def get(
@@ -175,7 +171,9 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         await self.__model__.delete(entity)
 
     # noinspection PyMethodOverriding
-    async def update(self, entity: TDocument, changes: Set, bulk_writer: Optional[BulkWriter] = None) -> Optional[TDocument]:
+    async def update(
+        self, entity: TDocument, changes: Set, bulk_writer: Optional[BulkWriter] = None
+    ) -> Optional[TDocument]:
         try:
             return await entity.update(changes, bulk_writer=bulk_writer)
         except DocumentNotFound as e:

@@ -1,7 +1,6 @@
+from furiousapi.core.config import BaseConnectionSettings
 from pydantic import BaseModel, Field
 from pydantic.networks import MultiHostDsn
-
-from furiousapi.core.config import BaseConnectionSettings
 
 
 class MongoDBDsn(MultiHostDsn):
