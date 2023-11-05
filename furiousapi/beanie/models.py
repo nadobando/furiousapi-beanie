@@ -16,9 +16,9 @@ from beanie import Document, PydanticObjectId
 if TYPE_CHECKING:
     from pydantic.fields import ModelField
 
-from furiousapi.core.db.consts import ANNOTATIONS
-from furiousapi.core.db.models import FuriousPydanticConfig
-from furiousapi.core.db.utils import (
+from furiousapi.db.consts import ANNOTATIONS
+from furiousapi.db.models import FuriousPydanticConfig
+from furiousapi.db.utils import (
     _convert_pydantic,
     _remove_extra_data_from_signature,
     clean_dict,
@@ -103,7 +103,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
                     if added:
                         break
                     try:
-                        if any(map(lambda x: sub_origin is x, (dict, NoneType))):
+                        if any(map(lambda x: sub_origin is x, (dict, NoneType))):  # noqa: C417
                             # TODO: what to do here?
                             continue
                         if args := typing.get_args(sub_origin):

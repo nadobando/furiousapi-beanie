@@ -281,25 +281,26 @@ six = ">=1.12,<2.0"
 
 [[package]]
 name = "furiousapi-core"
-version = "0.1.0"
-description = ""
+version = "0.1.0.dev1"
+description = "FastAPI & FuriousAPI"
 category = "main"
 optional = false
-python-versions = "^3.9.5"
-files = []
-develop = true
+python-versions = ">=3.9.5,<4.0.0"
+files = [
+    {file = "furiousapi_core-0.1.0.dev1-py3-none-any.whl", hash = "sha256:68ed7b94cca33e36a1d798ff6714c06d555840b977264d718dae4c158692ad2e"},
+    {file = "furiousapi_core-0.1.0.dev1.tar.gz", hash = "sha256:fb4af1e23b74a0fec67ebe0bbc07fb64d51bde8464157ec10279a0f0a3729d71"},
+]
 
 [package.dependencies]
-anyio = "^4.0.0"
-fastapi = "^0.97.0"
-pydantic = "^1.10.13"
-typing-extensions = "^4.8.0"
+anyio = ">=4.0.0,<5.0.0"
+fastapi = ">=0.97.0,<0.98.0"
+pydantic = ">=1.10.13,<2.0.0"
+typing-extensions = ">=4.8.0,<5.0.0"
 
 [package.source]
-type = "git"
-url = "https://github.com/nadobando/furiousapi-core.git"
-reference = "main"
-resolved_reference = "dfda2fee6309878bc06005614c459ad4788c7d60"
+type = "legacy"
+url = "https://test.pypi.org/simple"
+reference = "test"
 
 [[package]]
 name = "greenlet"
@@ -1154,4 +1155,4 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9.5"
-content-hash = "46609d072a4140c863e78292b93e54349e4d35435edc37912fea0bb571f60360"
+content-hash = "dfac0eff0c268e7de126548b9ee3615813ac5864943fc4e39e0da9a30cb42d74"

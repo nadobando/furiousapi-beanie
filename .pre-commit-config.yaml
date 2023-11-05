@@ -7,10 +7,11 @@ repos:
 #        args:
 #          - --keep-runtime-typing
 
-  - repo: https://github.com/pre-commit/mirrors-isort
-    rev: v5.10.1
-    hooks:
-      - id: isort
+#  - repo: https://github.com/pre-commit/mirrors-isort
+#    rev: v5.10.1
+#    hooks:
+#      - id: isort
+#
 
 
   - repo: https://github.com/psf/black
@@ -57,7 +58,9 @@ repos:
         args:
           - -c
           - pyproject.toml
+          - --quiet
         additional_dependencies:
+          - bandit[toml]
           - toml
 
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -107,15 +110,6 @@ repos:
         stages: [post-checkout, post-merge]
         always_run: true
 
-      - id: poetry-export
-        name: poetry-export
-        entry: poetry export
-        args:
-          - -f
-          - requirements.txt
-          - -o requirements.txt
-        language: python
-        pass_filenames: false
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.10.0

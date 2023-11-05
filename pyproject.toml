@@ -62,21 +62,48 @@ ignore_missing_imports = true
 # strict = true
 plugins = "pydantic.mypy"
 
-[tool.poe.tasks]
-setup-pre-commit = "pre-commit install --install-hooks --hook-type prepare-commit-msg --hook-type pre-commit"
-
 [tool.poetry]
 authors = ["nadobando <7695172+nadobando@users.noreply.github.com>"]
-description = ""
-include = ["furiousapi"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Framework :: AsyncIO",
+  "Framework :: Pydantic",
+  "Framework :: FastAPI",
+  "Topic :: Database",
+  "Topic :: Software Development",
+  "Topic :: Internet",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Software Development",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+  "Topic :: Internet :: WWW/HTTP",
+  "Environment :: Web Environment",
+  "Intended Audience :: Developers",
+  "Typing :: Typed"
+]
+description = "MongoDB Implementation for FastAPI & FuriousAPI"
+documentation = "https://nadobando.github.io/furiousapi"
+homepage = "https://github.com/nadobando/furiousapi-beanie"
 name = "furiousapi-beanie"
 packages = [{include = "furiousapi"}]
-version = "0.1.0"
+readme = "README.md"
+repository = "https://github.com/nadobando/furiousapi-beanie"
+version = "0.0.1-dev.1"
 
 [tool.poetry.dependencies]
 beanie = {version = "^1.19.2"}
 flatten-dict = {version = "^0.4.2"}
-furiousapi-core = {git = "https://github.com/nadobando/furiousapi-core.git", develop = true, branch="main"}
+furiousapi-core = {version = "^0", source = "test", allow-prereleases = true}
 pydantic = "^1.10.13"
 # core
 python = "^3.9.5"
@@ -97,6 +124,11 @@ pytest-xdist = {version = "^3.2.1", extras = ["psutil"]}
 
 [tool.poetry.scripts]
 furious = "furiousapi.cli:app"
+
+[[tool.poetry.source]]
+name = "test"
+secondary = true
+url = "https://test.pypi.org/simple/"
 
 # enable_recursive_aliases = true
 [tool.pydantic-mypy]
@@ -169,3 +201,29 @@ ignore-variadic-names = true
 
 [tool.ruff.pyupgrade]
 keep-runtime-typing = true
+
+[tool.semantic_release]
+version_toml = [
+  "pyproject.toml:tool.poetry.version"
+]
+version_variables = [
+  "furiousapi/beanie/__init__.py:__version__"
+]
+
+[tool.semantic_release.branches.dev]
+match = "dev"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+  "^ci:.*",
+  "^(?!feat:|fix:|perf:|refactor:).*$"
+]
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = false
