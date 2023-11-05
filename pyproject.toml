@@ -98,7 +98,7 @@ name = "furiousapi-beanie"
 packages = [{include = "furiousapi"}]
 repository = "https://github.com/nadobando/furiousapi-beanie"
 version = "0.0.0"
-
+readme = "README.md"
 [tool.poetry.dependencies]
 beanie = {version = "^1.19.2"}
 flatten-dict = {version = "^0.4.2"}
