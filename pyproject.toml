@@ -93,11 +93,9 @@ classifiers = [
 description = "MongoDB Implementation for FastAPI & FuriousAPI"
 documentation = "https://nadobando.github.io/furiousapi"
 homepage = "https://github.com/nadobando/furiousapi-beanie"
-repository = "https://github.com/nadobando/furiousapi-beanie"
-authors = ["nadobando <7695172+nadobando@users.noreply.github.com>"]
-
 name = "furiousapi-beanie"
 packages = [{include = "furiousapi"}]
+repository = "https://github.com/nadobando/furiousapi-beanie"
 version = "0.1.0"
 
 [tool.poetry.dependencies]
