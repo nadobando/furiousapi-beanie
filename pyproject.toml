@@ -78,6 +78,7 @@ classifiers = [
   "Framework :: AsyncIO",
   "Framework :: Pydantic",
   "Framework :: FastAPI",
+  "Topic :: Database",
   "Topic :: Software Development",
   "Topic :: Internet",
   "Topic :: Software Development :: Libraries :: Application Frameworks",
