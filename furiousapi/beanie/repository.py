@@ -115,7 +115,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             projection_model=projection and create_subset_model(self.__model__, projection) or None,
         )
         if not model and should_error:
-            raise EntityNotFoundError(self.__model__.__name__, identifiers)
+            raise EntityNotFoundError(self.__model__, identifiers)
 
         return model
 
@@ -213,7 +213,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             result: List[BulkResponseModelUnion] = [BulkItemSuccess(id=i.id) for i in success_result]
 
             for error_index, error_msg in error_indexes:
-                result.insert(error_index, BulkItemError(message=f"mongodb: {error_msg}"))
+                result.insert(error_index, BulkItemError(detail=f"mongodb: {error_msg}"))
 
             return BulkResponseModel(items=result, has_errors=True)
         else:

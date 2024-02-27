@@ -393,4 +393,5 @@ async def test_bulk_create__when_has_errors__then_mixed_response_returned():
     assert isinstance(first.id, PydanticObjectId)
     for i in range(1, size):
         assert response.items[i].status == BulkItemStatusEnum.ERROR
-        assert response.items[i].message
+        assert response.items[i].detail
+
