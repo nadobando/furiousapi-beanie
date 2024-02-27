@@ -16,11 +16,11 @@ def event_loop():
 
 @pytest.fixture()
 def mocked_motor_client():
-    das = "test_hs_das"
-    return AsyncMongoMockClient()[das]
+    db = "test_db"
+    return AsyncMongoMockClient()[db]
 
 
 @pytest.fixture(scope="session")
 def mocked_motor_client_session():
-    das = "test_hs_das"
-    return AsyncMongoMockClient()[das]
+    db = "test_db"
+    return AsyncMongoMockClient()[db]
