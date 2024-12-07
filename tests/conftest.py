@@ -14,7 +14,7 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_motor_client():
     db = "test_db"
     return AsyncMongoMockClient()[db]

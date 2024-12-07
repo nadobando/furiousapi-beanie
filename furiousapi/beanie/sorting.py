@@ -21,7 +21,7 @@ def _convert_sort(
         if not getattr(model, field.name, None):
             raise InvalidEnumFieldError(field.name)
 
-        field_ = invert and ~field or field
+        field_ = (invert and ~field) or field
         result.append((str(getattr(model, field_.name)), SORTING_DIRECTION_MAPPING[field_.direction]))
 
     return tuple(result)

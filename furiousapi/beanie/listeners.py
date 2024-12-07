@@ -59,8 +59,7 @@ class CommandLogger(monitoring.CommandListener):
                     "request_id": event.request_id,
                     "service_id": event.service_id,
                     "command": (
-                        hasattr(event.command, "to_dict")
-                        and json.dumps(event.command.to_dict(), cls=StrJSONEncoder)
+                        (hasattr(event.command, "to_dict") and json.dumps(event.command.to_dict(), cls=StrJSONEncoder))
                         or event.command
                     ),
                 },

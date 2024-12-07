@@ -19,6 +19,8 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    cast,
+    Iterable,
 )
 
 from bson import ObjectId
@@ -27,12 +29,19 @@ from furiousapi.api.exceptions import FuriousAPIError
 from furiousapi.api.pagination import PaginatedResponse, PaginationStrategyEnum
 from furiousapi.core.config import get_settings
 from furiousapi.core.fields import SortingDirection
+
 from furiousapi.db.pagination import (
     BaseCursorPagination,
     BaseRelayPagination,
     Cursor,
     PaginatorMixin,
 )
+from furiousapi.pydantic import PYDANTIC_V2
+
+if PYDANTIC_V2:
+    import pydantic_core
+else:
+    from pydantic import BaseConfig
 
 from beanie import Document, PydanticObjectId
 from beanie.operators import And, Or
@@ -41,6 +50,7 @@ from .sorting import _convert_sort
 
 if TYPE_CHECKING:
     from types import GenericAlias
+    from furiousapi.core.types import TEntity
 
     from furiousapi.db.fields import SortableFieldEnum
 
@@ -70,6 +80,12 @@ class BeanieLimitPagination(PaginatorMixin):
         return items, has_next_page
 
 
+def object_id_to_json(x: Union[str, PydanticObjectId]) -> bytes:
+    if isinstance(x, PydanticObjectId):
+        return str(x).encode()
+    return pydantic_core.to_json(x)
+
+
 class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     mapping: ClassVar[Dict[Union[type, GenericAlias], Callable[..., object]]] = {
         datetime: datetime.fromisoformat,
@@ -82,8 +98,23 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     def __init__(
         self, sort_enum: SortableFieldEnum, id_fields: Set[str], sorting: List[SortableFieldEnum], model: Type[Document]
     ) -> None:
-        self.__json_dumps__ = hasattr(model.Config, "json_dumps") and model.Config.json_dumps or json.dumps
-        self.__json_loads__ = hasattr(model.Config, "json_loads") and model.Config.json_loads or json.loads
+
+        if PYDANTIC_V2:
+            self.__json_dumps__: Callable = object_id_to_json
+            self.__json_loads__: Callable = pydantic_core.from_json
+        else:
+            config: Type[BaseConfig] = cast(Type[BaseConfig], model.Config)
+            self.__json_dumps__: Callable = (
+                hasattr(config, "json_dumps")
+                and config.json_dumps
+                # type: ignore[attr-defined]
+            ) or json.dumps
+            self.__json_loads__: Callable = (
+                hasattr(config, "json_loads")
+                and config.json_loads
+                # type: ignore[attr-defined]
+            ) or json.loads
+
         super().__init__(model)
         super(BeanieLimitPagination, self).__init__(sort_enum, id_fields, sorting)
 
@@ -101,6 +132,21 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
             return Or(column.__eq__(None), clause)
 
         return clause
+
+    def render_cursor(self, item: TEntity, column_fields: Iterable[SortableFieldEnum]) -> str:
+        if PYDANTIC_V2:
+            result = []
+            for field in column_fields:
+                value = getattr(item, field.value)
+                if isinstance(value, (PydanticObjectId, ObjectId)):
+                    value = (b'"' + self.__json_dumps__(value) + b'"').decode()
+                else:
+                    value = self.__json_dumps__(value).decode()
+                result.append(value)
+            cursor = tuple(result)
+        else:
+            cursor = tuple(self.__json_dumps__(getattr(item, field.value), default=str) for field in column_fields)
+        return self.encode_cursor(cursor)
 
     def cast(self, column_type: Union[type, GenericAlias], value: Any) -> Any:
         if get_origin(column_type) is Union:
@@ -212,7 +258,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
         if cursor:
             inverted_sorting = [~field for field in field_orderings]
             index_filter = self.get_filter(inverted_sorting, cursor, is_index_query=True)
-            filter_clause = query.find_expressions and And(index_filter, *query.find_expressions) or index_filter
+            filter_clause = (query.find_expressions and And(index_filter, *query.find_expressions)) or index_filter
             index = (await self.model.find(filter_clause).sort(*inverted_sorting).count()) + 1
 
             if self.reversed:
@@ -248,7 +294,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
 
         if items:
             cursors_out = self.make_cursor(items[-1], field_orderings)
-            next_ = has_next_page and cursors_out or None
+            next_ = (has_next_page and cursors_out) or None
 
         page_info = await self.get_page_info(query, field_orderings, cursor_in, items)
 
@@ -292,7 +338,8 @@ class BeanieRelayCursorPagination(BeanieCursorPagination, BaseRelayPagination):
 
         if items:
             cursors_out = self.make_cursors(items, field_orderings)
-            next_ = has_next_page and cursors_out[-1] or None
+
+            next_ = (has_next_page and cursors_out[-1]) or None
 
         page_info = await self.get_page_info(query, field_orderings, cursor_in, items)
 
@@ -310,10 +357,10 @@ AllPaginationStrategies = Union[Type[BeanieCursorPagination]]
 
 
 def get_paginator(
-    strategy: Union[PaginationStrategyEnum, str] = PaginationStrategyEnum.CURSOR
+    strategy: Union[PaginationStrategyEnum, str] = PaginationStrategyEnum.CURSOR,
 ) -> AllPaginationStrategies:
     if not isinstance(strategy, Enum):
-        strategy = PaginationStrategyEnum[strategy]
+        strategy = PaginationStrategyEnum(strategy)
     if not (paginator := PAGINATION_MAPPING.get(strategy)):
         raise FuriousAPIError(BadRequestHttpErrorResponse(detail=f"pagination strategy {strategy} not found"))
     return paginator

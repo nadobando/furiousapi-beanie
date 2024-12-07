@@ -101,17 +101,22 @@ repository = "https://github.com/nadobando/furiousapi-beanie.git"
 version = "0.0.1-dev.1"
 
 [tool.poetry.dependencies]
-beanie = { version = "^1.19.2" }
+beanie = { version = "*" }
 flatten-dict = { version = "^0.4.2" }
-#furiousapi-core = {version = "^0", source = "test", allow-prereleases = true}
-furiousapi-core = {git = "https://github.com/nadobando/furiousapi-core.git", rev = "dev2"}
-pydantic = "^1.10.13"
+# furiousapi-core = {version = "^0", source = "test", allow-prereleases = true}
+furiousapi-core = { git = "https://github.com/nadobando/furiousapi-core", branch = "dev2", develop = true }
+pydantic = ">=1.10.13,<3.0.0"
+pydantic-settings = { version = "*", optional = true }
 # core
-python = "^3.9.5"
+# pydantic-settings = "*"
+python = ">=3.9.5,<=3.13"
+
+[tool.poetry.extras]
+pydantic-settings = ["pydantic-settings"]
 
 [tool.poetry.group.dev.dependencies]
 coverage = "^7.1.0"
-greenlet = "^2.0.2"
+# greenlet = "^2.0.2"
 httpx = "^0.23.3"
 mongomock-motor = "^0.0.17"
 mypy = "^0.991"
@@ -120,6 +125,7 @@ pytest = "^7.4.2"
 pytest-asyncio = "^0.20.3"
 pytest-cov = "^4.0.0"
 pytest-xdist = { version = "^3.2.1", extras = ["psutil"] }
+tox = "*"
 
 [tool.poetry.plugins]
 
@@ -144,6 +150,10 @@ testpaths = [
     "tests"
 ]
 
+
+
+
+
 [tool.ruff]
 exclude = [
     ".bzr",
@@ -166,9 +176,14 @@ exclude = [
     "node_modules",
     "venv"
 ]
-ignore = [
+line-length = 120
+# mypy-init-return = true
+target-version = "py39"
+lint.ignore = [
+    "UP",
+    "SIM108",
+    "ANN204",
     "D",
-    "ANN101",
     "A003",
     "B008",
     "B905",
@@ -178,7 +193,6 @@ ignore = [
     "ANN002",
     "EM101",
     "TRY003",
-    "ANN102",
     "UP035",
     "G004",
     "EM102",
@@ -187,21 +201,21 @@ ignore = [
     "TD",
     "FIX002"
 ]
-line-length = 120
-select = ["ALL"]
-
-[tool.ruff.flake8-annotations]
-mypy-init-return = true
-
-[tool.ruff.flake8-unused-arguments]
-ignore-variadic-names = true
+lint.select = ["ALL"]
 
 [tool.ruff.per-file-ignores]
 "furiousapi/beanie/models.py" = ["N804", "ERA001"]
 "tests/*" = ["ANN201", "S101", "DTZ001", "PLR0913"]
 
-[tool.ruff.pyupgrade]
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
+
 
 [tool.semantic_release]
 version_toml = [

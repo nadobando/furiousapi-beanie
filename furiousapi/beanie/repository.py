@@ -14,6 +14,13 @@ from typing import (
     cast,
 )
 
+from beanie import BulkWriter, Document, PydanticObjectId
+from beanie.exceptions import DocumentNotFound
+from beanie.odm.enums import SortDirection
+from beanie.odm.operators.find.logical import Or
+from beanie.odm.operators.update.general import Set
+from beanie.odm.queries.find import FindMany
+from beanie.operators import Eq
 from flatten_dict import unflatten
 from furiousapi.api.pagination import (
     AllPaginationStrategies,
@@ -26,7 +33,7 @@ from furiousapi.api.responses import (
     BulkResponseModel,
     BulkResponseModelUnion,
 )
-from furiousapi.core.types import TModelFields, TSortableFields
+from furiousapi.core.types import TModelFields, TSortableFields, TEntity
 from furiousapi.db.exceptions import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
@@ -34,18 +41,14 @@ from furiousapi.db.exceptions import (
 )
 from furiousapi.db.repository import BaseRepository, ModelDependency, RepositoryConfig
 from furiousapi.db.utils import create_subset_model
+
+from furiousapi.pydantic import PYDANTIC_V2
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
-from beanie import BulkWriter, Document, PydanticObjectId
-from beanie.exceptions import DocumentNotFound
-from beanie.odm.operators.find.logical import Or
-from beanie.odm.operators.update.general import Set
-from beanie.operators import Eq
 from furiousapi.beanie.models import BeanieAllOptionalMeta, beanie_document_query
 from furiousapi.beanie.pagination import get_paginator
-
 from .utils import _get_bulk_query_by_unique_index
 
 if TYPE_CHECKING:
@@ -60,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 
 def model_fields_to_projection(projection: "Iterable[TModelFields]") -> Optional[dict]:
-    return projection and unflatten({x.value: 1 for x in projection}, splitter=lambda x: x.split(".")) or None
+    return (projection and unflatten({x.value: 1 for x in projection}, splitter=lambda x: x.split("."))) or None
 
 
 class IdProjectedModel(BaseModel):
@@ -92,7 +95,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         *,
         should_error: bool = False,
     ) -> bool:
-        id_ = PydanticObjectId.is_valid(identifiers) and PydanticObjectId(identifiers) or identifiers
+        id_ = (PydanticObjectId.is_valid(identifiers) and PydanticObjectId(identifiers)) or identifiers
         count = await self.__model__.find_one(self.__model__.id == id_).count()
         if count > 0:
             return True
@@ -109,10 +112,10 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         should_error: bool = True,
     ) -> Optional[TDocument]:
         projection = projection and model_fields_to_projection(projection)
-        id_ = PydanticObjectId.is_valid(identifiers) and PydanticObjectId(identifiers) or identifiers
+        id_ = (PydanticObjectId.is_valid(identifiers) and PydanticObjectId(identifiers)) or identifiers
         model: TDocument = await self.__model__.get(
             id_,
-            projection_model=projection and create_subset_model(self.__model__, projection) or None,
+            projection_model=(projection and create_subset_model(self.__model__, projection)) or None,
         )
         if not model and should_error:
             raise EntityNotFoundError(self.__model__, identifiers)
@@ -149,7 +152,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         if projection and pagination.pagination_type == PaginationStrategyEnum.CURSOR:
             projection[self.__model__.id] = 1
 
-        returned_model = projection and create_subset_model(self.__model__, projection) or self.__model__
+        returned_model = (projection and create_subset_model(self.__model__, projection)) or self.__model__
         query = query.project(returned_model)
 
         init_params = {
@@ -167,15 +170,25 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         except DuplicateKeyError as exc:
             raise EntityAlreadyExistsError(self.__model__, entity.id) from exc
 
-    async def delete(self, entity: TDocument, **_) -> None:
-        await self.__model__.delete(entity)
+    async def delete(self, id_: Union[str, PydanticObjectId], **_) -> None:
+        if isinstance(id_, str):
+            id_ = PydanticObjectId(id_)
+        await self.__model__.find_one(self.__model__.id == id_).delete()
 
     # noinspection PyMethodOverriding
     async def update(
-        self, entity: TDocument, changes: Set, bulk_writer: Optional[BulkWriter] = None
+        self, id_: Union[PydanticObjectId, str], entity: TDocument, bulk_writer: Optional[BulkWriter] = None
     ) -> Optional[TDocument]:
         try:
-            return await entity.update(changes, bulk_writer=bulk_writer)
+            if entity.id and str(id_) != str(entity.id):
+                raise AssertionError
+            if PYDANTIC_V2:
+                d = entity.model_dump(by_alias=True, exclude_unset=True, exclude={"id"})
+            else:
+                d = entity.dict(by_alias=True, exclude_unset=True, exclude={"id"})
+
+            return await entity.update(Set(d), bulk_writer=bulk_writer)
+
         except DocumentNotFound as e:
             raise EntityNotFoundError(self.__model__, entity.id) from e
 
@@ -249,3 +262,27 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
     def session(self) -> "ClientSession":
         return self.__model__.get_settings().motor_db.client.start_session()
+
+    async def query(
+        self, pagination: "AllPaginationStrategies", query: FindMany = None, *args, **kwargs
+    ) -> "Iterable[TEntity]":
+        if not query:
+            query = self.__model__.find()
+
+        sorting = []
+        for s in query.sort_expressions:
+            attr = getattr(self.__sort__, s[0])
+            if s[1] == SortDirection.ASCENDING:
+                sorting.append(+attr)
+            else:
+                sorting.append(-attr)
+
+        # query.sort_expressions
+        init_params = {
+            "model": self.__model__,
+            "sorting": sorting,
+            "id_fields": ["id"],
+            "sort_enum": self.__sort__,
+        }
+        paginator = get_paginator(pagination.pagination_type)(**init_params)
+        return await paginator.get_page(query, pagination.limit, pagination.next)

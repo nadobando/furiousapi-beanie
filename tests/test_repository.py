@@ -15,6 +15,7 @@ from beanie import Document, PydanticObjectId
 from furiousapi.beanie.models import FuriousMongoModel
 from furiousapi.beanie.repository import BaseMongoRepository
 from tests.utils import get_first_doc_from_cache
+from furiousapi.pydantic import PYDANTIC_V2
 
 if TYPE_CHECKING:
     import motor.core
@@ -31,14 +32,18 @@ class MyModel(Document):
     int_number: int
     float_number: int
     is_boolean: bool
-    nullable: Optional[int]
+    nullable: Optional[int] = None
 
     class Settings:
         name = "my_model"
         use_revision = False
 
-    class Config(FuriousMongoModel.Config):
-        pass
+    if PYDANTIC_V2:
+        model_config = FuriousMongoModel.model_config
+    else:
+
+        class Config(FuriousMongoModel.Config):
+            pass
 
 
 class MyRepository(BaseMongoRepository[MyModel]): ...
@@ -63,17 +68,19 @@ async def init_data(_init_my_model: None, request: FixtureRequest):
         )
         doc = await repository.add(model)
         result.append(doc.json())
-    nullable_alternator = 0
-    for i in range(PAGINATION):
+    for (
+        index,
+        i,
+    ) in enumerate(range(PAGINATION)):
         model = MyModel(
             another_id=i + PAGINATION + 1,
             created_at=datetime.datetime(2023, 1, 1, 0, i + 1),
             int_number=i + 1,
             float_number=(i % 4) + 1,
             is_boolean=False,
-            nullable=nullable_alternator % 2 and 1 or None,
+            nullable=((index + 1) % 2 and 1) or None,
         )
-        nullable_alternator += 1
+
         doc = await repository.add(model)
         result.append(doc.json())
 
@@ -250,7 +257,7 @@ async def init_data(_init_my_model: None, request: FixtureRequest):
         #     id="sort by nullable",)
     ],
 )
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_list_with_sorting_and_filter(
     limit: int,
     sorting: List[Tuple[str, str]],
@@ -287,7 +294,7 @@ async def test_list_with_sorting_and_filter(
         [MyRepository.__fields__.is_boolean, MyRepository.__fields__.float_number, MyRepository.__fields__.int_number],
     ],
 )
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_list_with_projection(projection: List[SortableFieldEnum]):
     repository = MyRepository()
     next_ = None
@@ -309,7 +316,7 @@ async def test_list_with_projection(projection: List[SortableFieldEnum]):
         next_ = response.next
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get(request: FixtureRequest):
     repository = MyRepository()
     first_doc = get_first_doc_from_cache(request, CACHE_KEY, MyModel)
@@ -317,7 +324,7 @@ async def test_get(request: FixtureRequest):
     assert doc == first_doc
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_exists(request: FixtureRequest):
     repository = MyRepository()
     first_doc = get_first_doc_from_cache(request, CACHE_KEY)
@@ -325,14 +332,14 @@ async def test_exists(request: FixtureRequest):
     assert response is True
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get__when_entity__does_not_exists__raises_entity_not_found_error():
     repository = MyRepository()
     with pytest.raises(EntityNotFoundError):
         await repository.exists(PydanticObjectId(), should_error=True)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get__when_entity__does_not_exists__and_should_error_false_does_not_raises_entity_not_found_error():
     repository = MyRepository()
     try:
@@ -342,7 +349,7 @@ async def test_get__when_entity__does_not_exists__and_should_error_false_does_no
         pytest.fail(f"test should not raise {EntityNotFoundError.__name__}")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_add__when__entity_already_exists__raises_entity_already_exists_error(request: FixtureRequest):
     repository = MyRepository()
     entity = get_first_doc_from_cache(request, CACHE_KEY, MyModel)
@@ -350,7 +357,7 @@ async def test_add__when__entity_already_exists__raises_entity_already_exists_er
         await repository.add(entity)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bulk_create():
     repository = MyRepository()
     size = 10
@@ -370,7 +377,7 @@ async def test_bulk_create():
         assert isinstance(response.items[i].id, ObjectId)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bulk_create__when_has_errors__then_mixed_response_returned():
     repository = MyRepository()
     size = 10
@@ -394,4 +401,3 @@ async def test_bulk_create__when_has_errors__then_mixed_response_returned():
     for i in range(1, size):
         assert response.items[i].status == BulkItemStatusEnum.ERROR
         assert response.items[i].detail
-

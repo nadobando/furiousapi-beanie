@@ -6,15 +6,21 @@ import typing
 from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple, Type, Union
 
-import pydantic
+from beanie.odm.utils.pydantic import get_extra_field_info
 from fastapi import Depends, params
+from furiousapi.pydantic import PYDANTIC_V2
 from pydantic import BaseModel, create_model
-from pydantic.typing import NoneType
+
+
+if PYDANTIC_V2:
+    NoneType = None
+else:
+    from pydantic.typing import NoneType  # type: ignore[assignment]
 
 from beanie import Document, PydanticObjectId
 
 if TYPE_CHECKING:
-    from pydantic.fields import ModelField
+    from furiousapi.pydantic import ModelField
 
 from furiousapi.db.consts import ANNOTATIONS
 from furiousapi.db.models import FuriousPydanticConfig
@@ -22,13 +28,14 @@ from furiousapi.db.utils import (
     _convert_pydantic,
     _remove_extra_data_from_signature,
     clean_dict,
-    init_param,
+    init_query_param,
 )
+from furiousapi.pydantic import ModelMetaclass
 
 logger = logging.getLogger(__name__)
 
 
-class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
+class BeanieAllOptionalMeta(ModelMetaclass):
     def __new__(mcs, name: str, bases: Tuple[type], namespaces: Dict[str, Any], **kwargs) -> Any:
         _convert_pydantic(name, namespaces, bases)
         new = super().__new__(mcs, name, bases, namespaces, **kwargs)
@@ -64,7 +71,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
         namespaces[ANNOTATIONS] = annotations
 
     @classmethod
-    def flatten_fields(  # noqa: C901, PLR0912
+    def flatten_fields(  # noqa: C901, PLR0912, PLR0915
         mcs,
         model: Type[BaseModel],
         prefix: Optional[str] = None,
@@ -77,16 +84,28 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
         cls_params.pop("kwargs", None)
         param_prefix = f"{prefix}__" if prefix else ""
         alias_prefix = f"{alias_prefix_}." if alias_prefix_ else ""
-        for parameter, model_field in zip(cls_params.values(), model.__fields__.values()):
+        if PYDANTIC_V2:
+            model_fields = model.model_fields
+        else:
+            model_fields = model.__fields__  # type: ignore[assignment]
+        for parameter, model_field in zip(cls_params.values(), model_fields.values()):
+            if PYDANTIC_V2:
+                field_info = model_field
+            else:
+                field_info = model_field.field_info  # type: ignore[attr-defined]
             if parameter.kind in (
                 inspect.Parameter.VAR_KEYWORD,
                 inspect.Parameter.VAR_POSITIONAL,
-            ) or model_field.field_info.extra.get("hidden"):
+            ) or get_extra_field_info(field_info, "hidden"):
                 continue
             origin = typing.get_origin(model_field.annotation) or model_field.annotation
 
-            new_param_name = f"{param_prefix}{model_field.name}"
-            new_alias_name = f"{alias_prefix}{model_field.name}"
+            if PYDANTIC_V2:
+                new_param_name = f"{param_prefix}{parameter.name}"
+                new_alias_name = f"{alias_prefix}{model_field.alias}"
+            else:
+                new_param_name = f"{param_prefix}{model_field.name}"  # type: ignore[attr-defined]
+                new_alias_name = f"{alias_prefix}{model_field.name}"  # type: ignore[attr-defined]
             if inspect.isclass(origin) and issubclass(origin, BaseModel):
                 mcs.flatten_fields(origin, new_param_name, new_alias_name, result)
 
@@ -110,7 +129,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
                             for arg in args:
                                 if (
                                     inspect.isclass(arg)
-                                    and type(sub_origin) != GenericAlias
+                                    and type(sub_origin) is not GenericAlias
                                     and issubclass(sub_origin, BaseModel)
                                 ):
                                     added = True
@@ -133,7 +152,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
                             added = True
                             # model_field.name = new_param_name
                             # model_field.field_info.alias = new_alias_name
-                            result.append(init_param(model_field, new_param_name, new_alias_name, parameter))
+                            result.append(init_query_param(model_field, new_param_name, new_alias_name, parameter))
 
                     except Exception:  # noqa: BLE001
                         logger.critical(
@@ -146,7 +165,7 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
             elif not (inspect.isclass(origin) and issubclass(origin, BaseModel)):
                 # model_field.name = new_param_name
                 # model_field.field_info.alias = new_alias_name
-                result.append(init_param(model_field, new_param_name, new_alias_name, parameter))
+                result.append(init_query_param(model_field, new_param_name, new_alias_name, parameter))
             else:
                 logger.warning(f"could not set {origin}")
         return result
@@ -199,10 +218,10 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
                             remaining_types.append((sub_arg, param_name, alias_name))
                             break
                 elif issubclass(sub_type, BaseModel):
-                    initialized_params.append(init_param(model_field, param_name, alias_name, parameter))
+                    initialized_params.append(init_query_param(model_field, param_name, alias_name, parameter))
                     break
 
-                initialized_params.append(init_param(model_field, param_name, alias_name, parameter))
+                initialized_params.append(init_query_param(model_field, param_name, alias_name, parameter))
 
             except Exception:  # noqa: BLE001
                 logger.critical(
@@ -219,12 +238,19 @@ class BeanieAllOptionalMeta(pydantic.main.ModelMetaclass):
 
 
 class FuriousMongoModel(Document):
-    class Config(Document.Config, FuriousPydanticConfig):
-        pass
+    if PYDANTIC_V2:
+        model_config = FuriousPydanticConfig
+    else:
+
+        class Config(Document.Config, FuriousPydanticConfig):
+            pass
 
 
 def beanie_document_query(model: Type[BaseModel]) -> params.Depends:
-    annotations = {k: (v.annotation, v.field_info) for k, v in model.__fields__.items()}
+    if PYDANTIC_V2:
+        annotations = {k: (v.annotation, v) for k, v in model.model_fields.items()}
+    else:
+        annotations = {k: (v.annotation, v.field_info) for k, v in model.__fields__.items()}  # type: ignore[attr-defined]
     cls = create_model(f"Optional{model.__name__}", **annotations)  # type: ignore[call-overload]
 
     def dependency(**kwargs) -> dict:
@@ -236,9 +262,13 @@ def beanie_document_query(model: Type[BaseModel]) -> params.Depends:
 
         return from_dict
 
-    cls.__fields__["id"].required = False
-    for field in cls.__fields__.values():
-        field.required = False
+    if PYDANTIC_V2:
+        for field in cls.model_fields.values():
+            field.default = None
+    else:
+        # cls.__fields__["id"].required = False
+        for field in cls.__fields__.values():
+            field.required = False
 
     cls_params = dict(cls.__signature__.parameters)
     cls_params.pop("args", None)
