@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Union
 
+from bson import json_util
 from pymongo import monitoring
 
 if TYPE_CHECKING:
@@ -13,7 +15,7 @@ if TYPE_CHECKING:
         CommandSucceededEvent,
     )
 
-logger = logging.getLogger("pymongo")
+logger = logging.getLogger("furiousapi.beanie.pymongo")
 
 
 class StrJSONEncoder(json.JSONEncoder):
@@ -41,15 +43,17 @@ class CommandLogger(monitoring.CommandListener):
 
     def _should_log(self, event: Union[CommandStartedEvent, CommandSucceededEvent, CommandFailedEvent]) -> bool:
         return self.commands_to_log is None or (
-            isinstance(
-                self.commands_to_log,
-                (list, tuple),
-            )
-            and event.command_name in self.commands_to_log
+            isinstance(self.commands_to_log, (list, tuple)) and event.command_name in self.commands_to_log
         )
 
     def started(self, event: CommandStartedEvent) -> None:
         if self._started and self._should_log(event):
+            command_ = (
+                hasattr(event.command, "to_dict") and json.dumps(event.command.to_dict(), cls=StrJSONEncoder)
+            ) or copy.deepcopy(event.command)
+            if hasattr(event, "_CommandStartedEvent__cmd"):
+                command_ = json_util.dumps(event._CommandStartedEvent__cmd)  # noqa: SLF001
+
             logger.debug(
                 f"mongo {event.command_name} started",
                 extra={
@@ -58,10 +62,7 @@ class CommandLogger(monitoring.CommandListener):
                     "operation_id": event.operation_id,
                     "request_id": event.request_id,
                     "service_id": event.service_id,
-                    "command": (
-                        (hasattr(event.command, "to_dict") and json.dumps(event.command.to_dict(), cls=StrJSONEncoder))
-                        or event.command
-                    ),
+                    "command": command_,
                 },
             )
 

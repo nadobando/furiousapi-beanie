@@ -9,18 +9,16 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
     List,
     Optional,
     Set,
     Tuple,
-    Type,
-    Union,
-    get_args,
-    get_origin,
     get_type_hints,
     cast,
     Iterable,
+    Type,
+    Dict,
+    Union,
 )
 
 from bson import ObjectId
@@ -28,27 +26,33 @@ from furiousapi.api.error_responses import BadRequestHttpErrorResponse
 from furiousapi.api.exceptions import FuriousAPIError
 from furiousapi.api.pagination import PaginatedResponse, PaginationStrategyEnum
 from furiousapi.core.config import get_settings
-from furiousapi.core.fields import SortingDirection
-
 from furiousapi.db.pagination import (
     BaseCursorPagination,
     BaseRelayPagination,
     Cursor,
     PaginatorMixin,
+    DynamicSortable,
 )
 from furiousapi.pydantic import PYDANTIC_V2
+
+from . import utils
+from .utils import alias_to_field
 
 if PYDANTIC_V2:
     import pydantic_core
 else:
     from pydantic import BaseConfig
 
-from beanie import Document, PydanticObjectId
+from typing import get_args, get_origin
+
+from beanie import Document, PydanticObjectId, SortDirection
 from beanie.operators import And, Or
 
 from .sorting import _convert_sort
+from furiousapi.pydantic import PYDANTIC_V2
 
 if TYPE_CHECKING:
+    from furiousapi.core.fields import SortingDirection
     from types import GenericAlias
     from furiousapi.core.types import TEntity
 
@@ -96,7 +100,11 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     }
 
     def __init__(
-        self, sort_enum: SortableFieldEnum, id_fields: Set[str], sorting: List[SortableFieldEnum], model: Type[Document]
+        self,
+        # sort_enum: SortableFieldEnum,
+        id_fields: Set[str],
+        # sorting: List[SortableFieldEnum],
+        model: Type[Document],
     ) -> None:
 
         if PYDANTIC_V2:
@@ -116,14 +124,15 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
             ) or json.loads
 
         super().__init__(model)
-        super(BeanieLimitPagination, self).__init__(sort_enum, id_fields, sorting)
+        super(BeanieLimitPagination, self).__init__(id_fields)
+        self.alias_mapping = alias_to_field(model)
 
     @classmethod
     def _handle_nullable(
         cls,
         column: ExpressionField,
         value: Any,
-        direction: SortingDirection = SortingDirection.ASCENDING,
+        direction: SortDirection = SortDirection.ASCENDING,
         *,
         is_nullable: bool,
     ) -> BaseFindOperator:
@@ -133,11 +142,36 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
 
         return clause
 
+    def get_field_orderings(self, query: FindMany) -> List[DynamicSortable]:
+        query_sorting = query.sort_expressions
+
+        if query_sorting:
+            last_dir = query_sorting[-1][1]
+            op = SortDirection.ASCENDING if last_dir == SortDirection.ASCENDING else SortDirection.DESCENDING
+        else:
+            op = SortDirection.ASCENDING
+
+        model_alias_sorting = {self.alias_mapping.get(field, field) for field, _ in query_sorting}
+
+        missing_id_fields = self.id_fields - model_alias_sorting
+        missing_sort_fields = [(getattr(self.model, field), op) for field in missing_id_fields]
+
+        return query_sorting + missing_sort_fields
+
+    @staticmethod
+    def deep_getattr(obj: object, attr_path: str) -> object:
+        for attr in attr_path.split("."):
+            if obj is None:
+                return None
+            obj = getattr(obj, attr, None)
+        return obj
+
     def render_cursor(self, item: TEntity, column_fields: Iterable[SortableFieldEnum]) -> str:
         if PYDANTIC_V2:
             result = []
-            for field in column_fields:
-                value = getattr(item, field.value)
+            for field, _ in column_fields:
+                field_ = self.alias_mapping.get(field, field)
+                value = self.deep_getattr(item, field_)
                 if isinstance(value, (PydanticObjectId, ObjectId)):
                     value = (b'"' + self.__json_dumps__(value) + b'"').decode()
                 else:
@@ -145,7 +179,8 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
                 result.append(value)
             cursor = tuple(result)
         else:
-            cursor = tuple(self.__json_dumps__(getattr(item, field.value), default=str) for field in column_fields)
+            cursor = tuple(self.__json_dumps__(getattr(item, field[0]), default=str) for field in column_fields)
+
         return self.encode_cursor(cursor)
 
     def cast(self, column_type: Union[type, GenericAlias], value: Any) -> Any:
@@ -159,8 +194,8 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
         return value
 
     @staticmethod
-    def set_operator(column: ExpressionField, value: Any, direction: SortingDirection) -> BaseFindOperator:
-        if direction == SortingDirection.ASCENDING:
+    def set_operator(column: ExpressionField, value: Any, direction: SortDirection) -> BaseFindOperator:
+        if direction == SortDirection.ASCENDING:
             return column > value
 
         return column < value
@@ -169,8 +204,8 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
         self, field_orderings: list[SortableFieldEnum], cursor: Cursor, *, is_index_query: bool = False
     ) -> BaseFindOperator:
         column_cursors = []
-        for field, cursor_value in zip(field_orderings, cursor):
-            column_cursors.append((getattr(self.model, field.name), field.direction, cursor_value))
+        for (field, direction), cursor_value in zip(field_orderings, cursor):
+            column_cursors.append((getattr(self.model, self.alias_mapping.get(field, field)), direction, cursor_value))
         cursors = []
         for i in range(len(column_cursors)):
             clause = self.get_filter_clause(column_cursors[: i + 1], is_index_query=is_index_query)
@@ -201,7 +236,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
             return None
         clauses = []
         for column, direction, cursor in column_cursors:
-            hint = self.get_model_field_hint(cursor[0])
+            hint = utils.get_model_field_hint(self.model, cursor[0][0])
             value = self.cast(hint, cursor[1])
 
             if cursor[0] not in self.id_fields:
@@ -219,13 +254,15 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
         *,
         is_index_query: bool = False,
     ) -> BaseFindOperator:
-        hint = self.get_model_field_hint(cursor[0])
+
+        field = self.alias_mapping.get(cursor[0][0], cursor[0][0])
+        hint = self.get_model_field_hint(field)
         value = self.cast(hint, cursor[1])
         is_nullable = any(
-            [issubclass(i, type(None)) for i in get_args(hint) if str(cursor[0]) not in self.id_fields]  # noqa: C419
+            [issubclass(i, type(None)) for i in get_args(hint) if str(field) not in self.id_fields]  # noqa: C419
         )
 
-        if direction == SortingDirection.ASCENDING:
+        if direction == SortDirection.ASCENDING:
             if value is None:
                 if is_index_query:
                     return Or(column != value, column > value)
@@ -246,6 +283,18 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     def get_model_field_hint(self, column: Union[ExpressionField, str]) -> Union[type, GenericAlias]:
         return get_type_hints(self.model)[column]
 
+    @staticmethod
+    def inverted_sort(
+        sorting: List[Tuple[Union[str, ExpressionField], SortingDirection]],
+    ) -> List[Tuple[Union[str, ExpressionField], SortingDirection]]:
+        reversed_sort = []
+        for field, direction in sorting:
+            if direction == SortDirection.ASCENDING:
+                reversed_sort.append((field, SortDirection.DESCENDING))
+            else:
+                reversed_sort.append(((field, SortDirection.ASCENDING)))
+        return reversed_sort
+
     async def get_page_info(
         self,
         query: FindMany,
@@ -256,7 +305,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
         total = await query.count()
         index: Optional[int] = 0
         if cursor:
-            inverted_sorting = [~field for field in field_orderings]
+            inverted_sorting = self.inverted_sort(field_orderings)
             index_filter = self.get_filter(inverted_sorting, cursor, is_index_query=True)
             filter_clause = (query.find_expressions and And(index_filter, *query.find_expressions)) or index_filter
             index = (await self.model.find(filter_clause).sort(*inverted_sorting).count()) + 1
@@ -273,8 +322,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseCursorPagination):
     async def get_page(
         self, query: FindMany, limit: int, next_: Optional[str] = None, *args, **kwargs
     ) -> PaginatedResponse:
-        field_orderings = self.get_field_orderings()
-
+        field_orderings = self.get_field_orderings(query)
         cursor_in = self.get_request_cursor(next_, field_orderings)
         sort = _convert_sort(self.model, tuple(field_orderings))
 
@@ -317,17 +365,16 @@ class BeanieRelayCursorPagination(BeanieCursorPagination, BaseRelayPagination):
     async def get_page(
         self, query: FindMany, limit: int, next_: Optional[str] = None, *args, **kwargs
     ) -> PaginatedResponse:
-        field_orderings = self.get_field_orderings()
+        sort = self.get_field_orderings(query)
 
-        cursor_in = self.parse_cursor(next_, field_orderings)
-        sort = _convert_sort(self.model, tuple(field_orderings))
+        cursor_in = self.parse_cursor(next_, sort)
 
         if cursor_in is not None:
-            page_query = self.get_filter(field_orderings, cursor_in)
+            page_query = self.get_filter(sort, cursor_in)
             page_query = And(page_query, *query.find_expressions)
-            page_query = self.model.find(page_query).sort(*sort).project(query.get_projection_model())
+            page_query = self.model.find(page_query).sort(*sort)
         else:
-            query.sort(*sort)
+            query = query.sort(*[x for x in sort if x not in query.sort_expressions])
             page_query = query
 
         items, has_next_page = await super(BeanieCursorPagination, self).get_page(page_query, limit, next_=next_)
@@ -337,11 +384,11 @@ class BeanieRelayCursorPagination(BeanieCursorPagination, BaseRelayPagination):
             items.reverse()
 
         if items:
-            cursors_out = self.make_cursors(items, field_orderings)
+            cursors_out = self.make_cursors(items, sort)
 
             next_ = (has_next_page and cursors_out[-1]) or None
 
-        page_info = await self.get_page_info(query, field_orderings, cursor_in, items)
+        page_info = await self.get_page_info(query, sort, cursor_in, items)
 
         return PaginatedResponse[query.get_projection_model()](
             next=next_, items=items, total=page_info["total"], index=page_info["index"]

@@ -3,7 +3,6 @@ import logging
 from typing import (
     TYPE_CHECKING,
     Any,
-    ClassVar,
     Dict,
     List,
     Optional,
@@ -11,53 +10,43 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    cast,
 )
 
 from beanie import BulkWriter, Document, PydanticObjectId
 from beanie.exceptions import DocumentNotFound
-from beanie.odm.enums import SortDirection
 from beanie.odm.operators.find.logical import Or
 from beanie.odm.operators.update.general import Set
-from beanie.odm.queries.find import FindMany
-from beanie.operators import Eq
 from flatten_dict import unflatten
-from furiousapi.api.pagination import (
-    AllPaginationStrategies,
-    PaginatedResponse,
-    PaginationStrategyEnum,
-)
 from furiousapi.api.responses import (
     BulkItemError,
     BulkItemSuccess,
     BulkResponseModel,
     BulkResponseModelUnion,
 )
-from furiousapi.core.types import TModelFields, TSortableFields, TEntity
 from furiousapi.db.exceptions import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
     FuriousBulkError,
 )
-from furiousapi.db.repository import BaseRepository, ModelDependency, RepositoryConfig
-from furiousapi.db.utils import create_subset_model
-
+from furiousapi.db.repository import BaseRepository, RepositoryConfig
 from furiousapi.pydantic import PYDANTIC_V2
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
-from furiousapi.beanie.models import BeanieAllOptionalMeta, beanie_document_query
+from furiousapi.beanie.models import BeanieAllOptionalMeta
 from furiousapi.beanie.pagination import get_paginator
-from .utils import _get_bulk_query_by_unique_index
+from .utils import _get_bulk_query_by_unique_index, create_subset_model
 
 if TYPE_CHECKING:
+    from furiousapi.core.types import TModelFields, TEntity
     from collections.abc import Callable, Iterable
-
+    from furiousapi.api.pagination import (
+        AllPaginationStrategies,
+    )
     from pymongo.client_session import ClientSession
 
     from beanie.odm.operators.find import BaseFindOperator
-    from furiousapi.beanie.models import FuriousMongoModel
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +66,6 @@ class BaseMongoRepository(BaseRepository[TDocument]):
     __model__: Type[TDocument]
 
     class Config(RepositoryConfig):
-        fields_exclude = ("revision_id",)
-        sort_exclude = ("revision_id",)
-        model_to_query: ClassVar[ModelDependency] = beanie_document_query
         filter_model = BeanieAllOptionalMeta
 
     @functools.cached_property
@@ -124,45 +110,6 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
     async def find_one(self, criteria: "BaseFindOperator") -> Optional[TDocument]:
         return await self.__model__.find_one(criteria)
-
-    async def list(
-        self,
-        pagination: AllPaginationStrategies,
-        projection: Optional[List[TModelFields]] = None,
-        sorting: Optional[List["TSortableFields"]] = None,
-        filtering: Optional[Union[dict, "FuriousMongoModel"]] = None,
-    ) -> PaginatedResponse[TDocument]:
-        if filtering:
-            where = {}
-            for i in [Eq(k, v) for k, v in filtering.items()]:
-                where.update(i.query)
-
-            query = self.__model__.find(where)
-        else:
-            query = self.__model__.find()
-
-        if not sorting and pagination.pagination_type == PaginationStrategyEnum.CURSOR:
-            sorting = [+self.__sort__("id")]
-
-        for i in cast(List["TSortableFields"], sorting):
-            if projection and i not in projection:
-                projection.append(i)
-
-        projection = projection and unflatten({x.value: 1 for x in projection}, splitter=lambda x: x.split("."))
-        if projection and pagination.pagination_type == PaginationStrategyEnum.CURSOR:
-            projection[self.__model__.id] = 1
-
-        returned_model = (projection and create_subset_model(self.__model__, projection)) or self.__model__
-        query = query.project(returned_model)
-
-        init_params = {
-            "model": self.__model__,
-            "sorting": sorting,
-            "id_fields": ["id"],
-            "sort_enum": self.__sort__,
-        }
-        paginator = get_paginator(pagination.pagination_type)(**init_params)
-        return await paginator.get_page(query, pagination.limit, pagination.next)
 
     async def add(self, entity: TDocument, session: "ClientSession" = None, **kwargs) -> TDocument:
         try:
@@ -264,25 +211,16 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         return self.__model__.get_settings().motor_db.client.start_session()
 
     async def query(
-        self, pagination: "AllPaginationStrategies", query: FindMany = None, *args, **kwargs
+        self, query: Any, pagination: "AllPaginationStrategies", *args, return_cursor: bool = False, **kwargs
     ) -> "Iterable[TEntity]":
         if not query:
             query = self.__model__.find()
+        if return_cursor:
+            await query.to_list()
 
-        sorting = []
-        for s in query.sort_expressions:
-            attr = getattr(self.__sort__, s[0])
-            if s[1] == SortDirection.ASCENDING:
-                sorting.append(+attr)
-            else:
-                sorting.append(-attr)
-
-        # query.sort_expressions
         init_params = {
             "model": self.__model__,
-            "sorting": sorting,
-            "id_fields": ["id"],
-            "sort_enum": self.__sort__,
+            "id_fields": {"id"},
         }
         paginator = get_paginator(pagination.pagination_type)(**init_params)
         return await paginator.get_page(query, pagination.limit, pagination.next)

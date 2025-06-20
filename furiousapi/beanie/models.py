@@ -7,10 +7,8 @@ from types import GenericAlias
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple, Type, Union
 
 from beanie.odm.utils.pydantic import get_extra_field_info
-from fastapi import Depends, params
-from furiousapi.pydantic import PYDANTIC_V2
-from pydantic import BaseModel, create_model
-
+from furiousapi.pydantic import PYDANTIC_V2, get_model_fields
+from pydantic import BaseModel
 
 if PYDANTIC_V2:
     NoneType = None
@@ -21,13 +19,11 @@ from beanie import Document, PydanticObjectId
 
 if TYPE_CHECKING:
     from furiousapi.pydantic import ModelField
-
 from furiousapi.db.consts import ANNOTATIONS
 from furiousapi.db.models import FuriousPydanticConfig
 from furiousapi.db.utils import (
     _convert_pydantic,
     _remove_extra_data_from_signature,
-    clean_dict,
     init_query_param,
 )
 from furiousapi.pydantic import ModelMetaclass
@@ -71,7 +67,7 @@ class BeanieAllOptionalMeta(ModelMetaclass):
         namespaces[ANNOTATIONS] = annotations
 
     @classmethod
-    def flatten_fields(  # noqa: C901, PLR0912, PLR0915
+    def flatten_fields(  # noqa: C901, PLR0912
         mcs,
         model: Type[BaseModel],
         prefix: Optional[str] = None,
@@ -84,10 +80,8 @@ class BeanieAllOptionalMeta(ModelMetaclass):
         cls_params.pop("kwargs", None)
         param_prefix = f"{prefix}__" if prefix else ""
         alias_prefix = f"{alias_prefix_}." if alias_prefix_ else ""
-        if PYDANTIC_V2:
-            model_fields = model.model_fields
-        else:
-            model_fields = model.__fields__  # type: ignore[assignment]
+        model_fields = get_model_fields(model)
+
         for parameter, model_field in zip(cls_params.values(), model_fields.values()):
             if PYDANTIC_V2:
                 field_info = model_field
@@ -244,40 +238,3 @@ class FuriousMongoModel(Document):
 
         class Config(Document.Config, FuriousPydanticConfig):
             pass
-
-
-def beanie_document_query(model: Type[BaseModel]) -> params.Depends:
-    if PYDANTIC_V2:
-        annotations = {k: (v.annotation, v) for k, v in model.model_fields.items()}
-    else:
-        annotations = {k: (v.annotation, v.field_info) for k, v in model.__fields__.items()}  # type: ignore[attr-defined]
-    cls = create_model(f"Optional{model.__name__}", **annotations)  # type: ignore[call-overload]
-
-    def dependency(**kwargs) -> dict:
-        from_dict = clean_dict(kwargs)
-        for key, value in from_dict.copy().items():
-            if "__" in key:
-                from_dict[key.replace("__", ".")] = value
-                from_dict.pop(key)
-
-        return from_dict
-
-    if PYDANTIC_V2:
-        for field in cls.model_fields.values():
-            field.default = None
-    else:
-        # cls.__fields__["id"].required = False
-        for field in cls.__fields__.values():
-            field.required = False
-
-    cls_params = dict(cls.__signature__.parameters)
-    cls_params.pop("args", None)
-    params = BeanieAllOptionalMeta.flatten_fields(model)
-
-    dependency.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        parameters=params,
-        return_annotation=cls,
-        __validate_parameters__=True,
-    )
-
-    return Depends(dependency)

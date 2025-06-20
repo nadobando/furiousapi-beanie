@@ -14,13 +14,13 @@ import beanie
 from beanie import Document, PydanticObjectId
 from furiousapi.beanie.models import FuriousMongoModel
 from furiousapi.beanie.repository import BaseMongoRepository
+from tests.models import Foreign, OneToMany
 from tests.utils import get_first_doc_from_cache
 from furiousapi.pydantic import PYDANTIC_V2
 
 if TYPE_CHECKING:
     import motor.core
     from _pytest.fixtures import FixtureRequest
-    from furiousapi.db.fields import SortableFieldEnum
 
 PAGINATION = 5
 CACHE_KEY = "mongo_docs"
@@ -51,7 +51,7 @@ class MyRepository(BaseMongoRepository[MyModel]): ...
 
 @pytest_asyncio.fixture(scope="session")
 async def _init_my_model(mocked_motor_client_session: motor.AgnosticClientSession) -> None:
-    await beanie.init_beanie(mocked_motor_client_session, document_models=[MyModel])
+    await beanie.init_beanie(mocked_motor_client_session, document_models=[MyModel, Foreign, OneToMany])
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -268,12 +268,15 @@ async def test_list_with_sorting_and_filter(
     next_ = None
     result = []
     index_counter = 0
-    while response := await repository.list(
+    sorting_ = [getattr(getattr(MyModel, field), op)() for field, op in sorting]
+    query = MyModel.find_many()
+    if filtering is not None:
+        query = query.find_many(filtering)
+    if sorting:
+        query = query.sort(*sorting_)
+    while response := await repository.query(
+        query,
         CursorPaginationParams(limit=limit, next=next_),
-        sorting=[
-            getattr(getattr(repository.__sort__, field), op)() for field, op in sorting
-        ],  # TODO: this list needs to be initialized here... unidentified bug
-        filtering=filtering,
     ):
         result += [i.another_id for i in response.items]
         assert response.index == index_counter
@@ -284,36 +287,6 @@ async def test_list_with_sorting_and_filter(
         next_ = response.next
 
     assert result == expected
-
-
-@pytest.mark.parametrize(
-    "projection",
-    [
-        [MyRepository.__fields__.is_boolean],
-        [MyRepository.__fields__.is_boolean, MyRepository.__fields__.float_number],
-        [MyRepository.__fields__.is_boolean, MyRepository.__fields__.float_number, MyRepository.__fields__.int_number],
-    ],
-)
-@pytest.mark.asyncio
-async def test_list_with_projection(projection: List[SortableFieldEnum]):
-    repository = MyRepository()
-    next_ = None
-
-    while response := await repository.list(
-        CursorPaginationParams(limit=10, next=next_),
-        projection=projection,
-    ):
-        for item in response.items:
-            item_dict = item.dict()
-            assert len(item_dict) == len(projection)
-            for field in projection:
-                assert field.value in item_dict
-            # TODO: need to test nested projection
-
-        if not response.next:
-            break
-
-        next_ = response.next
 
 
 @pytest.mark.asyncio
