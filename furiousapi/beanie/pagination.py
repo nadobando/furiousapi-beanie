@@ -39,7 +39,7 @@ from .utils import alias_to_field
 if PYDANTIC_V2:
     import pydantic_core
 else:
-    from pydantic import BaseConfig
+    pass
 
 from typing import get_args, get_origin
 
@@ -47,6 +47,7 @@ from beanie import Document, PydanticObjectId, SortDirection
 from beanie.operators import And, Or
 
 if TYPE_CHECKING:
+    from pydantic import BaseConfig
     from types import GenericAlias
     from furiousapi.core.types import TEntity, Sorting
 
@@ -109,7 +110,7 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseRelayPagination):
             self.__json_dumps__: Callable = object_id_to_json
             self.__json_loads__: Callable = pydantic_core.from_json
         else:
-            config: Type[BaseConfig] = cast(Type[BaseConfig], model.Config)
+            config: Type[BaseConfig] = cast("Type[BaseConfig]", model.Config)
             self.__json_dumps__: Callable = (hasattr(config, "json_dumps") and config.json_dumps) or json.dumps
             self.__json_loads__: Callable = (hasattr(config, "json_loads") and config.json_loads) or json.loads
 

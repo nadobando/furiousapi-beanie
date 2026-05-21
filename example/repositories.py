@@ -1,6 +1,6 @@
-from typing import Optional, Iterable
+from typing import Optional
 
-from furiousapi.api.pagination import CursorPaginationParams
+
 from pydantic import BaseModel
 
 from example.models import Item, Review
@@ -17,9 +17,7 @@ class Item1(BaseModel):
     details: Optional[Details1] = None
 
 
-class ItemRepository(MongoRepository[Item]):
-    async def get_with_projection(self) -> Iterable[Item]:
-        return await self.query(self.__model__.find_many().project(Item1), CursorPaginationParams())
+class ItemRepository(MongoRepository[Item]): ...
 
 
 class ReviewRepository(MongoRepository[Review]):

@@ -10,8 +10,7 @@ from fastapi import FastAPI
 from furiousapi.pydantic import PYDANTIC_V2
 
 import tests.text_queries
-from furiousapi.beanie.query.model import RQLModelMongo, MongoTransformerConfig
-from tests.models import MyModel, MyController
+from tests.models import MyModel, MyController, Foreign, InnerDoc
 
 if TYPE_CHECKING:
     from beanie import Document
@@ -155,18 +154,19 @@ async def create_model(model: "Document", path: str, test_client: "TestClient") 
     model.id = ObjectId(json["_id"])
 
 
-class MyModelRQL(RQLModelMongo):
-    __model__ = MyModel
-    __transformer_params__ = MongoTransformerConfig(fetch_links=False)
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("rql", "expected"), [pytest.param(*x["params"], id=x["id"]) for x in tests.text_queries.ALL_TEST_CASES]
 )
 async def test_query(test_client: TestClient, caplog: pytest.LogCaptureFixture, rql: str, expected: str) -> None:
     caplog.set_level(logging.DEBUG, logger="furiousapi.beanie.pymongo")
-    model1 = MyModel(another_id=1, int_number=1, float_number=2, is_boolean=True)
+    model1 = MyModel(
+        another_id=1,
+        int_number=1,
+        float_number=2,
+        is_boolean=True,
+        foreign=Foreign(name="foo", inner=InnerDoc(name="inner")),
+    )
     await create_model(model1, "/model1", test_client)
     test_client.get(f"/model1?q={rql}").json()
     actual = get_listener_command(caplog)

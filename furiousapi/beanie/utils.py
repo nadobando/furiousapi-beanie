@@ -6,9 +6,10 @@ import sys
 import typing
 from functools import lru_cache
 from inspect import getmembers, isclass
-from typing import Any, Set, get_args, get_origin, Union
+from typing import Any, Callable, Annotated, get_args, get_origin, _SpecialForm
 from typing import Optional
 from typing import Sequence
+from typing import Set, Union
 from typing import TYPE_CHECKING, Dict
 from typing import Tuple, Type, List
 
@@ -21,7 +22,6 @@ from furiousapi.pydantic import PYDANTIC_V2, field_info_type
 from furiousapi.pydantic import get_model_fields
 from pydantic import BaseModel
 from pydantic import create_model
-from typing_extensions import Annotated
 
 if TYPE_CHECKING:
     from beanie.odm.fields import ExpressionField
@@ -59,6 +59,84 @@ def gather_documents(*modules) -> Sequence[Type[DocType]]:
 @lru_cache
 def get_model_field_hint(model: Type[DocType], attribute: Union[ExpressionField, str]) -> Union[type, GenericAlias]:
     return typing.get_type_hints(model)[attribute]
+
+
+MAPPING_ARG_COUNT = 2
+
+
+def _handle_annotated(args: Tuple, visit: Callable) -> Any:
+    return _walk_type_hint(args[0], visit)
+
+
+def _handle_union(args: Tuple, visit: Callable) -> Any:
+    for arg in args:
+        if arg is not type(None):
+            result = _walk_type_hint(arg, visit)
+            if result is not None:
+                return result
+    return None
+
+
+def _handle_iterable(args: Tuple, visit: Callable) -> Any:
+    if args:
+        return _walk_type_hint(args[0], visit)
+    return None
+
+
+def _handle_mapping(args: Tuple, visit: Callable) -> Any:
+    if len(args) == MAPPING_ARG_COUNT:
+        return _walk_type_hint(args[1], visit)
+    return None
+
+
+def _handle_generic_args(args: Tuple, visit: Callable) -> Any:
+    for arg in args:
+        result = _walk_type_hint(arg, visit)
+        if result is not None:
+            return result
+    return None
+
+
+_HANDLER_MAP: Dict[Union[Type, _SpecialForm], Callable] = {
+    Annotated: _handle_annotated,
+    Union: _handle_union,
+    list: _handle_iterable,
+    set: _handle_iterable,
+    tuple: _handle_iterable,
+    collections.abc.Sequence: _handle_iterable,
+    collections.abc.Iterable: _handle_iterable,
+    dict: _handle_mapping,
+    collections.abc.Mapping: _handle_mapping,
+}
+
+
+def _walk_type_hint(type_hint: Any, visit: Callable[[Any], Any]) -> Any:
+    origin = get_origin(type_hint)
+    args = get_args(type_hint)
+
+    result = visit(type_hint)
+    if result is not None:
+        return result
+
+    handler = _HANDLER_MAP.get(origin)
+    if handler:
+        result = handler(args, visit)
+    elif args:
+        result = _handle_generic_args(args, visit)
+    else:
+        result = None
+
+    return result
+
+
+# @lru_cache
+# def contains_type(type_hint: Any, target_type: type) -> bool:
+#     def match_visitor(t: Any):
+#         if typing.get_origin(t) == target_type:
+#             return True
+#         return False
+#
+#     return bool(_walk_type_hint(type_hint, match_visitor))
 
 
 def _unwrap_type(type_hint: Any) -> Set[Type[Any]]:
@@ -110,6 +188,7 @@ def expand_wildcard_projection(model: Type[BaseModel], tree: List[List]) -> List
 
         # Root-level wildcard: ['*']
         if head == "*" and not children:
+            # expanded.extend([[field] for field in resolve_fields(model)])
             for field in resolve_fields(model):
                 expanded.append([field])
             continue
@@ -187,49 +266,57 @@ def get_field(
         path = path[:-2]
 
     root, _, next_ = path.partition(".")
-    root = alias_to_field(model).get(root, root)
+    to_field = alias_to_field(model)
+    root = to_field.get(root, root)
+
     if not validate_fields:
         return model, getattr(getattr(model, root), next_), path
-    field = None
-    if issubclass(model, Document):
-        try:
-            field = getattr(model, root)
-        except AttributeError as e:
-            raise AttributeError(f"{model.__name__} has no {root} field") from e
-    elif model.model_fields.get(root):
-        if not next_:
-            return model, getattr(before_field, path), path
 
-        model = field_info_type(model.model_fields[root])
+    field = _get_field_from_model(model, root)
 
-        if model:
-            return get_field(next_, model, root)
-
-        raise ValueError(f"{before_field}.{root} not a document")
     if not next_:
         if not field:
             raise AttributeError(f"{path} does not exists in {model.__name__}")
         if before_field is not None:
             return model, getattr(before_field, field), path
         return model, field, path
-    link_fields = model.get_link_fields()
-    if field in link_fields:
-        model_ = link_fields[field].document_class
-    else:
-        field_info = model.model_fields[field]
-        model_ = field_info_type(field_info)
 
-    if before_field is None:
-        before_field = field
-    else:
-        before_field = getattr(before_field, field)
+    model_, before_field = _get_next_model_and_expr(model, field, before_field)
     return get_field(next_, model_, before_field)
+
+
+def _get_field_from_model(model: Type[DocType], root: str) -> Optional[Union[ExpressionField, str]]:
+    if issubclass(model, Document):
+        try:
+            return getattr(model, root)
+        except AttributeError as e:
+            raise AttributeError(f"{model.__name__} has no {root} field") from e
+
+    if root in model.model_fields:
+        return root  # placeholder to be handled later
+    return None
+
+
+def _get_next_model_and_expr(
+    model: Type[DocType],
+    field: Optional[ExpressionField],
+    before_field: Optional[ExpressionField],
+) -> Tuple[Type[DocType], ExpressionField]:
+    if field in model.get_link_fields():
+        model_ = model.get_link_fields()[field].document_class
+    else:
+        model_ = field_info_type(model.model_fields[field])
+
+    expr = field if before_field is None else getattr(before_field, field)
+    return model_, expr
 
 
 Projection = Dict[str, Union[int, "Projection"]]
 
+SUBSET_PREFIX = "__SubSetOf"
 
-def create_subset_model(model: Type[Union[BaseModel, Document]], projection: Projection) -> Type[BaseModel]:
+
+def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Projection) -> Type[BaseModel]:
     """
     Recursively create a subset of the given Pydantic model using the provided projection.
 
@@ -243,7 +330,7 @@ def create_subset_model(model: Type[Union[BaseModel, Document]], projection: Pro
     for field_name_, proj in projection.items():
         field_name = aliases.get(field_name_, field_name_)
         if field_name not in model_fields:
-            continue  # Optional: ignore unknown fields
+            continue
 
         field_info: FieldInfo = model_fields[field_name]
         field_type: Any = None
@@ -260,19 +347,26 @@ def create_subset_model(model: Type[Union[BaseModel, Document]], projection: Pro
             concretes = get_concrete_types(model, field_name)
             field_type = next(iter(concretes), None)
 
-        # if field_type couldn't be determined, fallback to annotation
         if not field_type:
             field_type = field_info.annotation
 
-        if isinstance(proj, dict) and issubclass(field_type, BaseModel):
-            sub_model = create_subset_model(field_type, proj)
+        field_info_copy = copy.deepcopy(field_info)
 
-            fields[field_name] = (sub_model, copy.deepcopy(field_info))
+        if isinstance(proj, dict) and issubclass(field_type, BaseModel):
+            if issubclass(field_type, Document):
+                sub_model = create_subset_model(field_type, proj)
+                annotation = sub_model
+            elif issubclass(field_type, BaseModel):
+                annotation = create_subset_model(field_type, proj)
+            else:
+                raise TypeError
+
+            fields[field_name] = (annotation, field_info_copy)
 
         else:
-            fields[field_name] = (field_type, copy.deepcopy(field_info))
+            fields[field_name] = (field_info.annotation, field_info_copy)
 
-    name = f"SubsetOf{model.__name__}"
+    name = f"{SUBSET_PREFIX}{model.__name__}"
     return create_model(name, __base__=BaseModel, **fields)
 
 
@@ -295,10 +389,12 @@ def get_projection(model: Type[ProjectionModelType]) -> Optional[Dict[str, Union
 
     for name, field in get_model_fields(model).items():
         alias = field.alias or name
-        outer_type = getattr(field, "annotation", None)
+        outer_type = next(iter(_unwrap_type(field.annotation)), None)
 
-        # Detect nested model (BaseModel subclass)
         if isinstance(outer_type, type) and issubclass(outer_type, BaseModel):
+            if not outer_type.__name__.startswith(SUBSET_PREFIX):
+                document_projection[alias] = 1
+                continue
             nested_proj = get_projection(outer_type)
             if nested_proj is not None:
                 document_projection[alias] = nested_proj

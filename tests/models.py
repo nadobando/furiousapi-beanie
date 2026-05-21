@@ -6,7 +6,7 @@ from beanie.odm.settings.document import DocumentSettings
 from fastapi.params import Depends
 from furiousapi.api import ModelController
 from furiousapi.pydantic import PYDANTIC_V2
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from furiousapi.beanie.models import FuriousMongoModel
 from furiousapi.beanie.query.model import RQLModelMongo
@@ -21,7 +21,7 @@ class InnerDoc(BaseModel):
 
 
 class Foreign(Document):
-    name: str
+    name: Optional[str] = Field(None)
     inner: Optional["InnerDoc"] = None
     _document_settings = DocumentSettings(use_revision=False, name="foreign")
 

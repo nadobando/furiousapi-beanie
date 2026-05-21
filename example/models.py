@@ -51,3 +51,8 @@ class ItemRead(BaseItem):
     id: PydanticObjectId
     # Note: Reviews are not embedded by default; you would populate them manually
     reviews: Optional[List[ReviewItemRead]] = None
+
+
+ItemRead.model_rebuild()
+Item.model_rebuild()
+ItemCreate.model_rebuild()

@@ -3,20 +3,19 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
+import beanie
 import pytest
 import pytest_asyncio
+from beanie import Document, PydanticObjectId
 from bson import ObjectId
-from furiousapi.api.pagination import CursorPaginationParams
 from furiousapi.api.responses import BulkItemStatusEnum
 from furiousapi.db import EntityAlreadyExistsError, EntityNotFoundError
+from furiousapi.pydantic import PYDANTIC_V2
 
-import beanie
-from beanie import Document, PydanticObjectId
 from furiousapi.beanie.models import FuriousMongoModel
 from furiousapi.beanie.repository import BaseMongoRepository
 from tests.models import Foreign, OneToMany
 from tests.utils import get_first_doc_from_cache
-from furiousapi.pydantic import PYDANTIC_V2
 
 if TYPE_CHECKING:
     import motor.core
@@ -274,10 +273,8 @@ async def test_list_with_sorting_and_filter(
         query = query.find_many(filtering)
     if sorting:
         query = query.sort(*sorting_)
-    while response := await repository.query(
-        query,
-        CursorPaginationParams(limit=limit, next=next_),
-    ):
+    paginator = repository.get_paginator("cursor")
+    while response := await paginator.get_page(query, limit, next_):
         result += [i.another_id for i in response.items]
         assert response.index == index_counter
         index_counter += limit

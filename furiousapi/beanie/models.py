@@ -13,12 +13,9 @@ from pydantic import BaseModel
 if PYDANTIC_V2:
     NoneType = None
 else:
-    from pydantic.typing import NoneType  # type: ignore[assignment]
+    from pydantic.typing import NoneType
 
 from beanie import Document, PydanticObjectId
-
-if TYPE_CHECKING:
-    from furiousapi.pydantic import ModelField
 from furiousapi.db.consts import ANNOTATIONS
 from furiousapi.db.models import FuriousPydanticConfig
 from furiousapi.db.utils import (
@@ -27,6 +24,9 @@ from furiousapi.db.utils import (
     init_query_param,
 )
 from furiousapi.pydantic import ModelMetaclass
+
+if TYPE_CHECKING:
+    from furiousapi.pydantic import ModelField
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class BeanieAllOptionalMeta(ModelMetaclass):
             if PYDANTIC_V2:
                 field_info = model_field
             else:
-                field_info = model_field.field_info  # type: ignore[attr-defined]
+                field_info = model_field.field_info
             if parameter.kind in (
                 inspect.Parameter.VAR_KEYWORD,
                 inspect.Parameter.VAR_POSITIONAL,
@@ -98,8 +98,8 @@ class BeanieAllOptionalMeta(ModelMetaclass):
                 new_param_name = f"{param_prefix}{parameter.name}"
                 new_alias_name = f"{alias_prefix}{model_field.alias}"
             else:
-                new_param_name = f"{param_prefix}{model_field.name}"  # type: ignore[attr-defined]
-                new_alias_name = f"{alias_prefix}{model_field.name}"  # type: ignore[attr-defined]
+                new_param_name = f"{param_prefix}{model_field.name}"
+                new_alias_name = f"{alias_prefix}{model_field.name}"
             if inspect.isclass(origin) and issubclass(origin, BaseModel):
                 mcs.flatten_fields(origin, new_param_name, new_alias_name, result)
 

@@ -1,5 +1,5 @@
-import functools
 import logging
+from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -10,13 +10,16 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    Iterable,
 )
 
-from beanie import BulkWriter, Document, PydanticObjectId
+from beanie import BulkWriter, Document, PydanticObjectId, WriteRules
 from beanie.exceptions import DocumentNotFound
 from beanie.odm.operators.find.logical import Or
 from beanie.odm.operators.update.general import Set
+from beanie.odm.queries.find import FindMany
 from flatten_dict import unflatten
+from furiousapi.api.pagination import PaginationStrategyEnum
 from furiousapi.api.responses import (
     BulkItemError,
     BulkItemSuccess,
@@ -28,22 +31,21 @@ from furiousapi.db.exceptions import (
     EntityNotFoundError,
     FuriousBulkError,
 )
-from furiousapi.db.repository import BaseRepository, RepositoryConfig
+from furiousapi.db.repository import BaseRepository
 from furiousapi.pydantic import PYDANTIC_V2
+
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 
-from furiousapi.beanie.models import BeanieAllOptionalMeta
-from furiousapi.beanie.pagination import get_paginator
+from .pagination import BeanieCursorPagination, BeanieOffsetPagination
 from .utils import _get_bulk_query_by_unique_index, create_subset_model
 
 if TYPE_CHECKING:
-    from furiousapi.core.types import TModelFields, TEntity
-    from collections.abc import Callable, Iterable
-    from furiousapi.api.pagination import (
-        AllPaginationStrategies,
-    )
+    from motor.motor_asyncio import AsyncIOMotorClientSession
+    from furiousapi.core.types import TModelFields
+    from collections.abc import Callable
+
     from pymongo.client_session import ClientSession
 
     from beanie.odm.operators.find import BaseFindOperator
@@ -65,10 +67,17 @@ TDocument = TypeVar("TDocument", bound=Document)
 class BaseMongoRepository(BaseRepository[TDocument]):
     __model__: Type[TDocument]
 
-    class Config(RepositoryConfig):
-        filter_model = BeanieAllOptionalMeta
+    def __init_paginators__(self) -> None:
+        self.__paginators__[PaginationStrategyEnum.CURSOR] = BeanieCursorPagination(
+            self.__primary_keys__, self.__model__
+        )
+        self.__paginators__[PaginationStrategyEnum.OFFSET] = BeanieOffsetPagination()
 
-    @functools.cached_property
+    @cached_property
+    def __primary_keys__(self):
+        return {"id"}
+
+    @cached_property
     def __unique_keys__(self) -> Optional[IndexModel]:
         for i in self.__model__.get_settings().indexes:
             if isinstance(i, IndexModel) and i.document.get("unique"):
@@ -113,7 +122,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
     async def add(self, entity: TDocument, session: "ClientSession" = None, **kwargs) -> TDocument:
         try:
-            return await self.__model__.insert_one(entity, session=session, **kwargs)
+            return await self.__model__.insert_one(entity, session=session, **kwargs, link_rule=WriteRules.WRITE)
         except DuplicateKeyError as exc:
             raise EntityAlreadyExistsError(self.__model__, entity.id) from exc
 
@@ -194,7 +203,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         async with BulkWriter() as bulk_writer:
             for i in bulk:
                 await self.__model__.find_one(self.__model__.id == i).delete(bulk_writer=bulk_writer)
-            return bulk_writer.commit()
+            return await bulk_writer.commit()
 
     async def bulk_upsert(
         self, bulk: List[Document], upsert_factory: "Optional[Callable[..., TDocument]]" = None
@@ -205,22 +214,18 @@ class BaseMongoRepository(BaseRepository[TDocument]):
                     bulk_writer=bulk_writer,
                     on_insert=upsert_factory,
                 )
-            return bulk_writer.commit()
+            return await bulk_writer.commit()
 
-    def session(self) -> "ClientSession":
-        return self.__model__.get_settings().motor_db.client.start_session()
+    async def session(self) -> "AsyncIOMotorClientSession":
+        return await self.__model__.get_settings().motor_db.client.start_session()
 
-    async def query(
-        self, query: Any, pagination: "AllPaginationStrategies", *args, return_cursor: bool = False, **kwargs
-    ) -> "Iterable[TEntity]":
+    def query(self, query: Any = None, filter_: "BaseFindOperator" = None, **kwargs) -> "FindMany":
         if not query:
             query = self.__model__.find()
-        if return_cursor:
-            await query.to_list()
+        if filter_:
+            query = query.find(filter_)
 
-        init_params = {
-            "model": self.__model__,
-            "id_fields": {"id"},
-        }
-        paginator = get_paginator(pagination.pagination_type)(**init_params)
-        return await paginator.get_page(query, pagination.limit, pagination.next)
+        return query
+
+    async def execute(self, query: FindMany) -> Iterable[TDocument]:
+        return await query.to_list()
