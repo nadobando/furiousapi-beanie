@@ -141,3 +141,9 @@ cython_debug/
 .idea
 
 node_modules
+
+# OS
+.DS_Store
+
+# uv lock file — libraries resolve fresh against consumers' constraints
+uv.lock
