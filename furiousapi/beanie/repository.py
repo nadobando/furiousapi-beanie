@@ -135,18 +135,26 @@ class BaseMongoRepository(BaseRepository[TDocument]):
     async def update(
         self, id_: Union[PydanticObjectId, str], entity: TDocument, bulk_writer: Optional[BulkWriter] = None
     ) -> Optional[TDocument]:
+        if entity.id and str(id_) != str(entity.id):
+            raise EntityNotFoundError(self.__model__, id_)
+
+        # Fetch the persisted document; beanie's `.update(Set(...))` operates on
+        # an existing instance with prior state, not on the freshly-parsed payload.
+        oid = PydanticObjectId(id_) if isinstance(id_, str) else id_
+        existing = await self.__model__.get(oid)
+        if existing is None:
+            raise EntityNotFoundError(self.__model__, id_)
+
+        if PYDANTIC_V2:
+            d = entity.model_dump(by_alias=True, exclude_unset=True, exclude={"id"})
+        else:
+            d = entity.dict(by_alias=True, exclude_unset=True, exclude={"id"})
+
         try:
-            if entity.id and str(id_) != str(entity.id):
-                raise AssertionError
-            if PYDANTIC_V2:
-                d = entity.model_dump(by_alias=True, exclude_unset=True, exclude={"id"})
-            else:
-                d = entity.dict(by_alias=True, exclude_unset=True, exclude={"id"})
-
-            return await entity.update(Set(d), bulk_writer=bulk_writer)
-
+            await existing.update(Set(d), bulk_writer=bulk_writer)
         except DocumentNotFound as e:
-            raise EntityNotFoundError(self.__model__, entity.id) from e
+            raise EntityNotFoundError(self.__model__, id_) from e
+        return existing
 
     async def bulk_create(self, bulk: List[Document]) -> BulkResponseModel:
         bulk_copy = bulk.copy()

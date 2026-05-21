@@ -86,15 +86,6 @@ class TestCrudLifecycle:
         assert r.status_code == HTTPStatus.OK, r.text
         assert r.json()["name"] == ITEM_PAYLOAD["name"]
 
-    @pytest.mark.xfail(
-        reason=(
-            "BaseMongoRepository.update calls `entity.update(Set(d))` on the "
-            "parsed payload (not the persisted entity), which crashes inside "
-            "beanie's merge_models when `right` is None. Pre-existing bug "
-            "surfaced by this app-level test; logged in CONCERNS.md."
-        ),
-        strict=True,
-    )
     def test_update(self, client: TestClient) -> None:
         updated = {**ITEM_PAYLOAD, "name": "Widget A — renamed"}
         r = client.put(f"/item/{state['crud_item_id']}", json=updated)
