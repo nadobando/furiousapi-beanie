@@ -206,14 +206,7 @@ class TestRQLSorts:
 
 
 class TestRelationships:
-    """Item creation + listing, with a related Review reference in payload.
-
-    Note: the example's ReviewController has a known issue where
-    `create_model = ReviewCreate` doesn't auto-convert to the Review
-    Document before insert. Tracked in CONCERNS.md. This test exercises
-    the Item side and creates Reviews via a route that takes a full
-    Review document shape.
-    """
+    """Item and Review CRUD, plus the cross-resource reference link."""
 
     def test_create_item_with_review_reference(self, client: TestClient) -> None:
         item_resp = client.post("/item/", json=make_item("with-review"))
@@ -224,6 +217,22 @@ class TestRelationships:
         get_item = client.get(f"/item/{item_id}")
         assert get_item.status_code == HTTPStatus.OK
         assert get_item.json()["name"] == "with-review"
+
+    def test_create_review_via_create_model(self, client: TestClient) -> None:
+        """Regression for CreateModelMixin auto-converting `create_model` to the entity.
+
+        `ReviewController` has `create_model = ReviewCreate` but no override of
+        `create()`. Before the fix, the parsed `ReviewCreate` was handed to
+        beanie's `insert_one`, which raised
+        `TypeError: Inserting document must be of the original document class`.
+        """
+        item_resp = client.post("/item/", json=make_item("review-target"))
+        assert item_resp.status_code == HTTPStatus.OK, item_resp.text
+        item_id = item_resp.json()["_id"]
+
+        review_resp = client.post("/review/", json={"text": "great widget", "item": item_id})
+        assert review_resp.status_code == HTTPStatus.OK, review_resp.text
+        assert review_resp.json()["text"] == "great widget"
 
 
 # ---------------------------------------------------------------------------
