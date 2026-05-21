@@ -250,3 +250,24 @@ class TestErrorPaths:
         # Missing `details` (required)
         r = client.post("/item/", json={"name": "broken"})
         assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY, r.text
+
+
+# ---------------------------------------------------------------------------
+# Filtering safeguard
+# ---------------------------------------------------------------------------
+
+
+class TestFilteringSafeguard:
+    """`?q=...` against a controller without `__filtering__` must 400, not crash."""
+
+    def test_q_without_filtering_returns_400(self, client: TestClient) -> None:
+        # ReviewController has no `__filtering__` configured (only ItemController does).
+        r = client.get("/review/", params={"q": "eq(text,anything)"})
+        assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+        body = r.json()
+        # FuriousAPIError formats as {"detail": {"status_code": 400, "detail": "..."}}.
+        # Be permissive about the exact shape: walk into nested `detail` if present.
+        message = body.get("detail")
+        if isinstance(message, dict):
+            message = message.get("detail", "")
+        assert "RQL filtering is not configured" in (message or ""), body
