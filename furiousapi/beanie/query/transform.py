@@ -1,7 +1,6 @@
 import logging
 import re
-from typing import List, Union, Optional, Dict, Tuple
-from typing import Type, Any
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 from beanie import Document
 from beanie import SortDirection
@@ -30,12 +29,14 @@ class MongoRQLTransform(BaseRQLModelTransform):
         super().__init__(*args, **kwargs)
         self.fetch_links = fetch_links
         self.validate_fields = validate_fields
-        self.__alias_mapping__ = utils.alias_to_field(self.model)
+        # beanie.Document sets __hash__ = None, which trips mypy's Hashable check
+        # for lru_cache args even though `type[Document]` is hashable at runtime.
+        self.__alias_mapping__ = utils.alias_to_field(self.model)  # type: ignore[arg-type]
         self.__is_distinct__: bool = False
 
     def listing(self, expression: Tuple[str, str, Any]) -> Union[Dict, In]:
         op, field, values = super().listing(expression)
-        _, field, _ = get_field(field, self.model, validate_fields=self.validate_fields)
+        _, field, _ = get_field(field, self.model, validate_fields=self.validate_fields)  # type: ignore[arg-type]
         if op == "__contains__":
             return In(field, values)
 
@@ -52,10 +53,13 @@ class MongoRQLTransform(BaseRQLModelTransform):
 
     def comp(self, c: List) -> BaseFindComparisonOperator:
         op, query_field, value = super().comp(c)
-        model, field, path = get_field(query_field, self.model)
+        model, field, path = get_field(query_field, self.model)  # type: ignore[arg-type]
         op = getattr(field, op)
-        to_field_map = utils.alias_to_field(model)
-        aliased_field = to_field_map.get(field, field)
+        to_field_map = utils.alias_to_field(model)  # type: ignore[arg-type]
+        # `field` is ExpressionField (subclass of str) at runtime; str() it so the
+        # dict lookup against str keys type-checks cleanly.
+        field_key = str(field) if field is not None else ""
+        aliased_field = to_field_map.get(field_key, field_key)
         aliased_path = to_field_map.get(path, path)
         if PYDANTIC_V2:
             model_ = model.__pydantic_validator__.validate_assignment(
@@ -91,14 +95,15 @@ class MongoRQLTransform(BaseRQLModelTransform):
                 return None
 
             if issubclass(model, Document):
-                link_field = model.get_link_fields().get(field)
+                link_fields = model.get_link_fields() or {}
+                link_field = link_fields.get(field)
                 if link_field:
                     return link_field.document_class
 
             return field_info_type(field_info)
 
         def walk(path: List[str], subtree: RQLMongoProjection, model: Type[BaseModel]) -> Dict:
-            projection = {}
+            projection: Dict[str, Any] = {}
             for k, v in subtree.items():
                 head = k
                 children = v
@@ -122,12 +127,12 @@ class MongoRQLTransform(BaseRQLModelTransform):
         return walk([], select_tree, model)
 
     def selection(self, s: List[Union[str, Dict]]) -> SelectedField:
-        s: SelectedField = super().selection(s)
-        return self._process_select(s, self.model)
+        selected: SelectedField = super().selection(s)
+        return self._process_select(cast("RQLMongoProjection", selected), self.model)
 
     def sign_prop(self, s: List[Union[Token, str]]) -> List[Union[str, SortDirection]]:
         field, direction = super().sign_prop(s)
-        _, expr_field, _ = get_field(field, self.model)
+        _, expr_field, _ = get_field(field, self.model)  # type: ignore[arg-type]
         return direction(expr_field)
 
     def start(self, _: Tree) -> FindMany:
@@ -150,7 +155,10 @@ class MongoRQLTransform(BaseRQLModelTransform):
                     attr = getattr(self.model, key)
                 select[attr] = v
 
-            query = query.project(returned_model)
+            # create_subset_model returns BaseModel; beanie's project() narrows
+            # its signature to Document. The dynamic subset model functions as a
+            # projection class regardless of its declared base.
+            query = query.project(cast("Type[Document]", returned_model))
 
         if self.__sorting_fields__:
             query = query.sort(*self.__sorting_fields__)

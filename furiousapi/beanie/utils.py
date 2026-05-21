@@ -6,12 +6,24 @@ import sys
 import typing
 from functools import lru_cache
 from inspect import getmembers, isclass
-from typing import Any, Callable, Annotated, get_args, get_origin, _SpecialForm
-from typing import Optional
-from typing import Sequence
-from typing import Set, Union
-from typing import TYPE_CHECKING, Dict
-from typing import Tuple, Type, List
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
+    Union,
+    _SpecialForm,
+    cast,
+    get_args,
+    get_origin,
+)
 
 import furiousapi.pydantic
 from beanie import Document
@@ -37,9 +49,12 @@ if PYDANTIC_V2:
 
 
 def _get_bulk_query_by_unique_index(
-    model: Type[DocType], bulk: list[DocType], unique_index: IndexModel
+    model: Type[Document], bulk: list[Document], unique_index: IndexModel
 ) -> list[BaseFindOperator]:
-    unique_keys = unique_index.document.get("key").keys()
+    key_doc = unique_index.document.get("key")
+    if key_doc is None:
+        return []
+    unique_keys = key_doc.keys()
     return [And(*[getattr(model, key) == getattr(item, key) for key in unique_keys for item in bulk])]
 
 
@@ -178,9 +193,9 @@ def expand_wildcard_projection(model: Type[BaseModel], tree: List[List]) -> List
         info = get_model_fields(model).get(field)
         if not info:
             return None
-        return info.annotation if PYDANTIC_V2 else info.type_
+        return info.annotation if PYDANTIC_V2 else getattr(info, "type_", None)
 
-    expanded = []
+    expanded: List[List[Any]] = []
 
     for branch in tree:
         head = branch[0]
@@ -265,9 +280,13 @@ def get_field(
     if path.endswith(".*"):
         path = path[:-2]
 
-    root, _, next_ = path.partition(".")
-    to_field = alias_to_field(model)
-    root = to_field.get(root, root)
+    root_part, _, next_ = path.partition(".")
+    # See note on alias_to_field's lru_cache use; type[Document] is hashable.
+    to_field = alias_to_field(model)  # type: ignore[arg-type]
+    root_lookup = to_field.get(root_part, root_part)
+    # to_field may map an alias to a nested dict; only top-level string aliases
+    # resolve here, so fall back to the raw path segment for nested cases.
+    root = root_lookup if isinstance(root_lookup, str) else root_part
 
     if not validate_fields:
         return model, getattr(getattr(model, root), next_), path
@@ -279,10 +298,11 @@ def get_field(
             raise AttributeError(f"{path} does not exists in {model.__name__}")
         if before_field is not None:
             return model, getattr(before_field, field), path
-        return model, field, path
+        return model, cast("ExpressionField", field), path
 
-    model_, before_field = _get_next_model_and_expr(model, field, before_field)
-    return get_field(next_, model_, before_field)
+    expr_field: Optional[ExpressionField] = cast("Optional[ExpressionField]", field)
+    model_, before_field = _get_next_model_and_expr(model, expr_field, before_field)
+    return get_field(next_, model_, before_field)  # type: ignore[arg-type]
 
 
 def _get_field_from_model(model: Type[DocType], root: str) -> Optional[Union[ExpressionField, str]]:
@@ -302,18 +322,43 @@ def _get_next_model_and_expr(
     field: Optional[ExpressionField],
     before_field: Optional[ExpressionField],
 ) -> Tuple[Type[DocType], ExpressionField]:
-    if field in model.get_link_fields():
-        model_ = model.get_link_fields()[field].document_class
+    if field is None:
+        raise ValueError("Cannot resolve next model from a None field")
+    field_key = str(field)
+    link_fields = model.get_link_fields() or {}
+    model_: Any
+    if field_key in link_fields:
+        model_ = link_fields[field_key].document_class
     else:
-        model_ = field_info_type(model.model_fields[field])
+        model_ = field_info_type(model.model_fields[field_key])
 
-    expr = field if before_field is None else getattr(before_field, field)
-    return model_, expr
+    expr = field if before_field is None else getattr(before_field, field_key)
+    return cast("Type[DocType]", model_), cast("ExpressionField", expr)
 
 
 Projection = Dict[str, Union[int, "Projection"]]
 
 SUBSET_PREFIX = "__SubSetOf"
+
+
+def _resolve_subset_field_type(model: Type[Union[Document, BaseModel]], field_info: FieldInfo, field_name: str) -> Any:
+    """Resolve the concrete python type for a projection-subset field.
+
+    Checks beanie link fields first, then unwraps the annotation via pydantic v2's
+    TypeAdapter (or get_concrete_types in v1), and finally falls back to the raw
+    field annotation.
+    """
+    if issubclass(model, Document):
+        link_fields = model.get_link_fields() or {}
+        if link_fields.get(field_name):
+            return link_fields[field_name].document_class
+    if PYDANTIC_V2:
+        schema = TypeAdapter(field_info.annotation).core_schema
+        field_type = schema.get("schema", {}).get("cls")
+        if field_type:
+            return field_type
+    concretes = get_concrete_types(model, field_name)  # type: ignore[arg-type]
+    return next(iter(concretes), None) or field_info.annotation
 
 
 def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Projection) -> Type[BaseModel]:
@@ -326,29 +371,16 @@ def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Pro
     """
     fields: Dict[str, Tuple[Any, Any]] = {}
     model_fields = get_model_fields(model)
-    aliases = alias_to_field(model)
+    aliases = alias_to_field(model)  # type: ignore[arg-type]
     for field_name_, proj in projection.items():
-        field_name = aliases.get(field_name_, field_name_)
+        alias_lookup = aliases.get(field_name_, field_name_)
+        # aliases may map to nested dicts; only top-level string aliases resolve here.
+        field_name = alias_lookup if isinstance(alias_lookup, str) else field_name_
         if field_name not in model_fields:
             continue
 
-        field_info: FieldInfo = model_fields[field_name]
-        field_type: Any = None
-
-        if issubclass(model, Document) and model.get_link_fields().get(field_name):
-            field_type = model.get_link_fields()[field_name].document_class
-        elif PYDANTIC_V2:
-            schema = TypeAdapter(field_info.annotation).core_schema
-            field_type = schema.get("schema", {}).get("cls")
-            if not field_type:
-                concretes = get_concrete_types(model, field_name)
-                field_type = next(iter(concretes), None)
-        else:
-            concretes = get_concrete_types(model, field_name)
-            field_type = next(iter(concretes), None)
-
-        if not field_type:
-            field_type = field_info.annotation
+        field_info: FieldInfo = cast("FieldInfo", model_fields[field_name])
+        field_type: Any = _resolve_subset_field_type(model, field_info, field_name)
 
         field_info_copy = copy.deepcopy(field_info)
 
@@ -367,20 +399,22 @@ def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Pro
             fields[field_name] = (field_info.annotation, field_info_copy)
 
     name = f"{SUBSET_PREFIX}{model.__name__}"
-    return create_model(name, __base__=BaseModel, **fields)
+    # create_model's overloads don't accept arbitrary kwargs dict at the type
+    # level; the (annotation, field_info) tuple-form is supported at runtime.
+    return create_model(name, __base__=BaseModel, **cast("Dict[str, Any]", fields))
 
 
 def get_projection(model: Type[ProjectionModelType]) -> Optional[Dict[str, Union[int, Dict[str, Any]]]]:
-    if hasattr(model, "get_model_type") and (
-        model.get_model_type() == ModelType.UnionDoc
-        or (model.get_model_type() == ModelType.Document and getattr(model, "_inheritance_inited", False))
+    get_model_type = getattr(model, "get_model_type", None)
+    if get_model_type is not None and (
+        get_model_type() == ModelType.UnionDoc
+        or (get_model_type() == ModelType.Document and getattr(model, "_inheritance_inited", False))
     ):
         return None
 
-    if hasattr(model, "Settings"):
-        settings = model.Settings
-        if hasattr(settings, "projection"):
-            return settings.projection
+    settings = getattr(model, "Settings", None)
+    if settings is not None and hasattr(settings, "projection"):
+        return settings.projection
 
     if get_config_value(model, "extra") == "allow":
         return None

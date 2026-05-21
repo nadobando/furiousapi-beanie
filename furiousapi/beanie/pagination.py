@@ -116,7 +116,10 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseRelayPagination):
 
         super().__init__(model)
         super(BeanieLimitPagination, self).__init__(id_fields)
-        self.alias_mapping = alias_to_field(model)
+        # beanie.Document declares __hash__ = None at the class level, which trips
+        # mypy's Hashable check on lru_cache call sites even though `type[Document]`
+        # is hashable at runtime.
+        self.alias_mapping = alias_to_field(model)  # type: ignore[arg-type]
 
     @classmethod
     def _handle_nullable(
@@ -222,12 +225,12 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseRelayPagination):
 
     def get_previous_clause(
         self, column_cursors: list[tuple[ExpressionField, SortDirection, tuple[str, ...]]]
-    ) -> BaseFindOperator:
+    ) -> Optional[BaseFindOperator]:
         if not column_cursors:
             return None
         clauses = []
         for column, direction, cursor in column_cursors:
-            hint = utils.get_model_field_hint(self.model, cursor[0][0])
+            hint = utils.get_model_field_hint(self.model, cursor[0][0])  # type: ignore[arg-type]
             value = self.cast(hint, cursor[1])
 
             if cursor[0] not in self.id_fields:
@@ -246,7 +249,10 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseRelayPagination):
         is_index_query: bool = False,
     ) -> BaseFindOperator:
 
-        field = self.alias_mapping.get(cursor[0][0], cursor[0][0])
+        field_lookup = self.alias_mapping.get(cursor[0][0], cursor[0][0])
+        # alias_mapping values can be nested-alias dicts; only top-level string
+        # aliases are valid input to get_model_field_hint.
+        field = field_lookup if isinstance(field_lookup, str) else cursor[0][0]
         hint = self.get_model_field_hint(field)
         value = self.cast(hint, cursor[1])
         is_nullable = any(
@@ -317,10 +323,11 @@ class BeanieCursorPagination(BeanieLimitPagination, BaseRelayPagination):
 
         cursor_in = self.parse_cursor(next_, sort)
 
+        page_query: FindMany
         if cursor_in is not None:
-            page_query = self.get_filter(sort, cursor_in)
-            page_query = And(page_query, *query.find_expressions)
-            page_query = self.model.find(page_query).sort(*sort)
+            filter_clause = self.get_filter(sort, cursor_in)
+            combined = And(filter_clause, *query.find_expressions)
+            page_query = self.model.find(combined).sort(*sort)
         else:
             query = query.sort(*[x for x in sort if x not in query.sort_expressions])
             page_query = query
