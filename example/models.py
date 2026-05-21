@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, List
 
 from beanie import Document, Link, PydanticObjectId
+from furiousapi.pydantic import PYDANTIC_V2
 from pydantic import BaseModel
 
 
@@ -53,6 +54,11 @@ class ItemRead(BaseItem):
     reviews: Optional[List[ReviewItemRead]] = None
 
 
-ItemRead.model_rebuild()
-Item.model_rebuild()
-ItemCreate.model_rebuild()
+if PYDANTIC_V2:
+    ItemRead.model_rebuild()
+    Item.model_rebuild()
+    ItemCreate.model_rebuild()
+else:
+    ItemRead.update_forward_refs()
+    Item.update_forward_refs()
+    ItemCreate.update_forward_refs()
