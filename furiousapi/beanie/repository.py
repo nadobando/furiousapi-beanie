@@ -131,25 +131,49 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             id_ = PydanticObjectId(id_)
         await self.__model__.find_one(self.__model__.id == id_).delete()
 
-    # noinspection PyMethodOverriding
-    async def update(
-        self, id_: Union[PydanticObjectId, str], entity: TDocument, bulk_writer: Optional[BulkWriter] = None
-    ) -> Optional[TDocument]:
-        if entity.id and str(id_) != str(entity.id):
+    async def _load_persisted(
+        self, id_: Union[PydanticObjectId, str], expected_id: Optional[PydanticObjectId]
+    ) -> TDocument:
+        if expected_id and str(id_) != str(expected_id):
             raise EntityNotFoundError(self.__model__, id_)
-
-        # Fetch the persisted document; beanie's `.update(Set(...))` operates on
-        # an existing instance with prior state, not on the freshly-parsed payload.
         oid = PydanticObjectId(id_) if isinstance(id_, str) else id_
         existing = await self.__model__.get(oid)
         if existing is None:
             raise EntityNotFoundError(self.__model__, id_)
+        return existing
 
+    # noinspection PyMethodOverriding
+    async def patch(
+        self,
+        id_: Union[PydanticObjectId, str],
+        partial: TDocument,
+        bulk_writer: Optional[BulkWriter] = None,
+    ) -> Optional[TDocument]:
+        """Partial update — only fields explicitly set on `partial` are written."""
+        existing = await self._load_persisted(id_, partial.id)
         if PYDANTIC_V2:
-            d = entity.model_dump(by_alias=True, exclude_unset=True, exclude={"id"})
+            d = partial.model_dump(by_alias=True, exclude_unset=True, exclude={"id"})
         else:
-            d = entity.dict(by_alias=True, exclude_unset=True, exclude={"id"})
+            d = partial.dict(by_alias=True, exclude_unset=True, exclude={"id"})
+        try:
+            await existing.update(Set(d), bulk_writer=bulk_writer)
+        except DocumentNotFound as e:
+            raise EntityNotFoundError(self.__model__, id_) from e
+        return existing
 
+    # noinspection PyMethodOverriding
+    async def replace(
+        self,
+        id_: Union[PydanticObjectId, str],
+        entity: TDocument,
+        bulk_writer: Optional[BulkWriter] = None,
+    ) -> Optional[TDocument]:
+        """Full replacement — every field on the entity is written, defaults included."""
+        existing = await self._load_persisted(id_, entity.id)
+        if PYDANTIC_V2:
+            d = entity.model_dump(by_alias=True, exclude={"id"})
+        else:
+            d = entity.dict(by_alias=True, exclude={"id"})
         try:
             await existing.update(Set(d), bulk_writer=bulk_writer)
         except DocumentNotFound as e:

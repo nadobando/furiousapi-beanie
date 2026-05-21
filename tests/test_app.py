@@ -86,12 +86,27 @@ class TestCrudLifecycle:
         assert r.status_code == HTTPStatus.OK, r.text
         assert r.json()["name"] == ITEM_PAYLOAD["name"]
 
-    def test_update(self, client: TestClient) -> None:
-        updated = {**ITEM_PAYLOAD, "name": "Widget A — renamed"}
-        r = client.put(f"/item/{state['crud_item_id']}", json=updated)
+    def test_replace_put(self, client: TestClient) -> None:
+        """PUT — full replacement; omitted fields revert to defaults."""
+        full = {**ITEM_PAYLOAD, "name": "Widget A — renamed"}
+        r = client.put(f"/item/{state['crud_item_id']}", json=full)
         assert r.status_code == HTTPStatus.OK, r.text
         r = client.get(f"/item/{state['crud_item_id']}")
         assert r.json()["name"] == "Widget A — renamed"
+
+    def test_patch_partial(self, client: TestClient) -> None:
+        """PATCH route exists and accepts a body matching the patch_model.
+
+        The framework's `patch_model` defaults to the full entity, so a true
+        partial body requires defining an all-Optional schema. This test just
+        verifies the PATCH route is wired up and reachable; partial-schema
+        ergonomics are tracked separately in CONCERNS.md.
+        """
+        full = {**ITEM_PAYLOAD, "name": "Widget A — patched"}
+        r = client.patch(f"/item/{state['crud_item_id']}", json=full)
+        assert r.status_code == HTTPStatus.OK, r.text
+        body = client.get(f"/item/{state['crud_item_id']}").json()
+        assert body["name"] == "Widget A — patched"
 
     def test_delete(self, client: TestClient) -> None:
         r = client.delete(f"/item/{state["crud_item_id"]}")
