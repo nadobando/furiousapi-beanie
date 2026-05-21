@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import beanie.odm.utils.projection
-import uvicorn
 from beanie import init_beanie
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -35,4 +34,6 @@ app.include_router(ReviewController.api_router)
 app.get("/", include_in_schema=False)(lambda: RedirectResponse("/redoc"))
 
 if __name__ == "__main__":
+    import uvicorn
+
     uvicorn.run(app, port=8083)
