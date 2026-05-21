@@ -1,10 +1,74 @@
 [build-system]
-build-backend = "poetry.core.masonry.api"
-requires = ["poetry-core"]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "furiousapi-beanie"
+version = "0.0.1-dev.1"
+description = "MongoDB Implementation for FastAPI & FuriousAPI"
+readme = "README.md"
+requires-python = ">=3.9.5,<=3.13"
+authors = [
+    { name = "nadobando", email = "7695172+nadobando@users.noreply.github.com" }
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: AsyncIO",
+    "Framework :: Pydantic",
+    "Framework :: FastAPI",
+    "Topic :: Database",
+    "Topic :: Software Development",
+    "Topic :: Internet",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Internet :: WWW/HTTP",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Typing :: Typed"
+]
+dependencies = [
+    "beanie>=1.0,<2",
+    "fastapi>=0.100.0,<0.116",
+    "flatten-dict>=0.4.2,<0.5",
+    "furiousapi-core",
+    "pydantic>=1.10.13,<3.0.0",
+    "pydantic-settings",
+]
+
+[project.urls]
+Homepage = "https://github.com/nadobando/furiousapi-beanie"
+Repository = "https://github.com/nadobando/furiousapi-beanie.git"
+Documentation = "https://nad,obando.github.io/furiousapi"
+
+#[project.scripts]
+#furious = "furiousapi.cli:app"
+
+[dependency-groups]
+dev = [
+    "mongomock-motor>=0.0",
+    "testcontainers[mongodb]>=4.0",
+]
+
+[tool.uv.sources]
+furiousapi-core = { workspace=true}
+
+[tool.hatch.build.targets.wheel]
+packages = ["furiousapi"]
 
 [tool.autopep8]
 aggressive = 3
-# ignore = "E501,W6"  # or ["E501", "W6"]
 in-place = true
 max_line_length = 120
 recursive = true
@@ -16,8 +80,8 @@ skips = ['**/test_*.py', '**/test_*.py']
 exclude = """
 (
   /(
-      .eggs         # exclude a few common directories in the
-    | .git          # root of the project
+      .eggs
+    | .git
     | .hg
     | .mypy_cache
     | .tox
@@ -62,83 +126,6 @@ ignore_missing_imports = true
 # strict = true
 plugins = "pydantic.mypy"
 
-[tool.poetry]
-authors = ["nadobando <7695172+nadobando@users.noreply.github.com>"]
-classifiers = [
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Framework :: AsyncIO",
-    "Framework :: Pydantic",
-    "Framework :: FastAPI",
-    "Topic :: Database",
-    "Topic :: Software Development",
-    "Topic :: Internet",
-    "Topic :: Software Development :: Libraries :: Application Frameworks",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Software Development :: Libraries",
-    "Topic :: Software Development",
-    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
-    "Topic :: Internet :: WWW/HTTP",
-    "Environment :: Web Environment",
-    "Intended Audience :: Developers",
-    "Typing :: Typed"
-]
-description = "MongoDB Implementation for FastAPI & FuriousAPI"
-documentation = "https://nadobando.github.io/furiousapi"
-homepage = "https://github.com/nadobando/furiousapi-beanie"
-name = "furiousapi-beanie"
-packages = [{ include = "furiousapi" }]
-readme = "README.md"
-repository = "https://github.com/nadobando/furiousapi-beanie.git"
-version = "0.0.1-dev.1"
-
-[tool.poetry.dependencies]
-beanie = { version = "*" }
-flatten-dict = { version = "^0.4.2" }
-# furiousapi-core = {version = "^0", source = "test", allow-prereleases = true}
-#furiousapi-core = { git = "https://github.com/nadobando/furiousapi-core", branch = "dev2", develop = true }
-furiousapi-core = { path = "../furiousapi-core", develop = true }
-pydantic = ">=1.10.13,<3.0.0"
-pydantic-settings = { version = "*" }
-# core
-# pydantic-settings = "*"
-python = ">=3.9.5,<=3.13"
-
-[tool.poetry.extras]
-pydantic-settings = ["pydantic-settings"]
-
-[tool.poetry.group.dev.dependencies]
-coverage = "^7.1.0"
-# greenlet = "^2.0.2"
-httpx = "^0.23.3"
-mongomock-motor = "^0.0"
-mypy = "^0.991"
-pre-commit = "^3.0.1"
-pytest = "^7.4.2"
-pytest-asyncio = "^0.20.3"
-pytest-cov = "^4.0.0"
-pytest-xdist = { version = "^3.2.1", extras = ["psutil"] }
-tox = "*"
-
-[tool.poetry.plugins]
-
-[tool.poetry.scripts]
-furious = "furiousapi.cli:app"
-
-[[tool.poetry.source]]
-name = "test"
-priority = "explicit"
-url = "https://test.pypi.org/simple/"
-
-# enable_recursive_aliases = true
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
@@ -150,10 +137,6 @@ addopts = "-ra"
 testpaths = [
     "tests"
 ]
-
-
-
-
 
 [tool.ruff]
 exclude = [
@@ -178,7 +161,6 @@ exclude = [
     "venv"
 ]
 line-length = 120
-# mypy-init-return = true
 target-version = "py39"
 lint.ignore = [
     "UP",
@@ -217,10 +199,9 @@ ignore-variadic-names = true
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
-
 [tool.semantic_release]
 version_toml = [
-    "pyproject.toml:tool.poetry.version"
+    "pyproject.toml:project.version"
 ]
 version_variables = [
     "furiousapi/beanie/__init__.py:__version__"
