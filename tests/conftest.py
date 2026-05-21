@@ -10,6 +10,7 @@ from furiousapi.api.exception_handling import furious_db_exception_handler, furi
 from furiousapi.api.exceptions import FuriousAPIError
 from furiousapi.db.exceptions import FuriousEntityError
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from testcontainers.mongodb import MongoDbContainer
 
 import tests.listeners
 from furiousapi.beanie.utils import get_projection
@@ -17,6 +18,12 @@ from tests.models import MyModel, Foreign, OneToMany
 
 beanie.odm.queries.find.get_projection = get_projection
 LISTENERS = [tests.listeners.CommandLogger(["find"])]
+
+
+@pytest.fixture(scope="session")
+def mongo_uri():
+    with MongoDbContainer("mongo:7") as container:
+        yield container.get_connection_url()
 
 
 @pytest.fixture(autouse=True)
@@ -41,14 +48,14 @@ async def drop_collections(db: AsyncIOMotorDatabase):
 
 
 @pytest.fixture
-def motor_client_() -> AsyncIOMotorClient:
-    return AsyncIOMotorClient(event_listeners=LISTENERS)
+def motor_client_(mongo_uri: str) -> AsyncIOMotorClient:
+    return AsyncIOMotorClient(mongo_uri, event_listeners=LISTENERS)
 
 
 @pytest.fixture
-async def mocked_motor_client() -> AsyncIOMotorDatabase:
+async def mocked_motor_client(mongo_uri: str) -> AsyncIOMotorDatabase:
     db_name = "test_db_function"
-    db = AsyncIOMotorClient(event_listeners=LISTENERS)[db_name]
+    db = AsyncIOMotorClient(mongo_uri, event_listeners=LISTENERS)[db_name]
     await drop_collections(db)
     db.get_io_loop = asyncio.get_event_loop
     yield db
@@ -56,9 +63,9 @@ async def mocked_motor_client() -> AsyncIOMotorDatabase:
 
 
 @pytest_asyncio.fixture(scope="session")
-async def mocked_motor_client_session() -> AsyncIOMotorDatabase:
+async def mocked_motor_client_session(mongo_uri: str) -> AsyncIOMotorDatabase:
     db_name = "test_db_session"
-    client = AsyncIOMotorClient(event_listeners=LISTENERS)
+    client = AsyncIOMotorClient(mongo_uri, event_listeners=LISTENERS)
     db = client[db_name]
     await drop_collections(db)
     db.get_io_loop = asyncio.get_event_loop
