@@ -3,9 +3,10 @@ from typing import Annotated
 from fastapi import Depends
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorClientSession
 
+from example.config import MONGO_URL
 from example.repositories import ItemRepository, ReviewRepository
 
-client = AsyncIOMotorClient()
+client = AsyncIOMotorClient(MONGO_URL)
 
 
 async def motor_session() -> AsyncIOMotorClientSession:
