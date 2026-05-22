@@ -168,7 +168,7 @@ async def test_query(test_client: TestClient, caplog: pytest.LogCaptureFixture, 
         foreign=Foreign(name="foo", inner=InnerDoc(name="inner")),
     )
     await create_model(model1, "/model1", test_client)
-    test_client.get(f"/model1?q={rql}").json()
+    test_client.get("/model1", params={"q": rql}).json()
     actual = get_listener_command(caplog)
     assert actual == expected
 

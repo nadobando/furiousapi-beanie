@@ -31,16 +31,6 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def event_loop():
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 async def drop_collections(db: AsyncIOMotorDatabase):
     col_names = await db.list_collection_names()
     for col in col_names:
@@ -52,7 +42,7 @@ def motor_client_(mongo_uri: str) -> AsyncIOMotorClient:
     return AsyncIOMotorClient(mongo_uri, event_listeners=LISTENERS)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mocked_motor_client(mongo_uri: str) -> AsyncIOMotorDatabase:
     db_name = "test_db_function"
     db = AsyncIOMotorClient(mongo_uri, event_listeners=LISTENERS)[db_name]

@@ -4,6 +4,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     TypeVar,
+    Union,
     cast,
 )
 from collections.abc import Iterable
@@ -51,7 +52,7 @@ def model_fields_to_projection(projection: "Iterable[TModelFields]") -> dict | N
 
 
 class IdProjectedModel(BaseModel):
-    id: str | PydanticObjectId = Field(alias="_id")
+    id: Union[str, PydanticObjectId] = Field(alias="_id")  # noqa: UP007
 
 
 TDocument = TypeVar("TDocument", bound=Document)
