@@ -20,13 +20,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from starlette.testclient import TestClient
 
 if TYPE_CHECKING:
-    from typing import Iterator
+    from collections.abc import Iterator
 
     from fastapi import FastAPI
 
 
 @pytest.fixture(scope="session")
-def app(mongo_uri: str) -> "FastAPI":
+def app(mongo_uri: str) -> FastAPI:
     """The example FastAPI app wired to the testcontainer Mongo."""
     from example import dependencies
 
@@ -37,7 +37,7 @@ def app(mongo_uri: str) -> "FastAPI":
 
 
 @pytest.fixture(scope="session")
-def client(app: "FastAPI") -> "Iterator[TestClient]":
+def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as c:
         yield c
 
@@ -82,7 +82,7 @@ class TestCrudLifecycle:
         state["crud_item_id"] = body["_id"]
 
     def test_get(self, client: TestClient) -> None:
-        r = client.get(f"/item/{state["crud_item_id"]}")
+        r = client.get(f"/item/{state['crud_item_id']}")
         assert r.status_code == HTTPStatus.OK, r.text
         assert r.json()["name"] == ITEM_PAYLOAD["name"]
 
@@ -109,11 +109,11 @@ class TestCrudLifecycle:
         assert body["name"] == "Widget A — patched"
 
     def test_delete(self, client: TestClient) -> None:
-        r = client.delete(f"/item/{state["crud_item_id"]}")
+        r = client.delete(f"/item/{state['crud_item_id']}")
         assert r.status_code in (HTTPStatus.OK, HTTPStatus.NO_CONTENT), r.text
 
     def test_get_404_after_delete(self, client: TestClient) -> None:
-        r = client.get(f"/item/{state["crud_item_id"]}")
+        r = client.get(f"/item/{state['crud_item_id']}")
         assert r.status_code == HTTPStatus.NOT_FOUND
 
 

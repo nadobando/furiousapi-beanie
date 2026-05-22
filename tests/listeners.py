@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Union
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
 
 from bson import json_util
 from pymongo import monitoring
@@ -29,7 +30,7 @@ class StrJSONEncoder(json.JSONEncoder):
 class CommandLogger(monitoring.CommandListener):
     def __init__(
         self,
-        commands_to_log: Optional[Iterable] = None,
+        commands_to_log: Iterable | None = None,
         *,
         started: bool = True,
         succeeded: bool = False,
@@ -41,7 +42,7 @@ class CommandLogger(monitoring.CommandListener):
         self._started = started
         self.commands_to_log = commands_to_log
 
-    def _should_log(self, event: Union[CommandStartedEvent, CommandSucceededEvent, CommandFailedEvent]) -> bool:
+    def _should_log(self, event: CommandStartedEvent | CommandSucceededEvent | CommandFailedEvent) -> bool:
         return self.commands_to_log is None or (
             isinstance(self.commands_to_log, (list, tuple)) and event.command_name in self.commands_to_log
         )

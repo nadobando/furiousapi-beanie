@@ -1,6 +1,3 @@
-from typing import Optional
-
-
 from pydantic import BaseModel
 
 from example.models import Item, Review
@@ -12,9 +9,9 @@ class Details1(BaseModel):
 
 
 class Item1(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    details: Optional[Details1] = None
+    name: str | None = None
+    description: str | None = None
+    details: Details1 | None = None
 
 
 class ItemRepository(MongoRepository[Item]): ...

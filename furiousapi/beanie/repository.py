@@ -3,16 +3,10 @@ from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Type,
     TypeVar,
-    Union,
     cast,
 )
+from collections.abc import Iterable
 
 from beanie import BulkWriter, Document, PydanticObjectId, WriteRules
 from beanie.exceptions import DocumentNotFound
@@ -52,19 +46,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def model_fields_to_projection(projection: "Iterable[TModelFields]") -> Optional[dict]:
+def model_fields_to_projection(projection: "Iterable[TModelFields]") -> dict | None:
     return (projection and unflatten({x.value: 1 for x in projection}, splitter=lambda x: x.split("."))) or None
 
 
 class IdProjectedModel(BaseModel):
-    id: Union[str, PydanticObjectId] = Field(alias="_id")
+    id: str | PydanticObjectId = Field(alias="_id")
 
 
 TDocument = TypeVar("TDocument", bound=Document)
 
 
 class BaseMongoRepository(BaseRepository[TDocument]):
-    __model__: Type[TDocument]
+    __model__: type[TDocument]
 
     def __init_paginators__(self) -> None:
         self.__paginators__[PaginationStrategyEnum.CURSOR] = BeanieCursorPagination(
@@ -77,7 +71,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
         return {"id"}
 
     @cached_property
-    def __unique_keys__(self) -> Optional[IndexModel]:
+    def __unique_keys__(self) -> IndexModel | None:
         for i in self.__model__.get_settings().indexes:
             if isinstance(i, IndexModel) and i.document.get("unique"):
                 return i
@@ -85,7 +79,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
     async def exists(
         self,
-        identifiers: Union[PydanticObjectId, int, str, Dict[str, Any], Tuple[Any]],
+        identifiers: PydanticObjectId | int | str | dict[str, Any] | tuple[Any],
         *,
         should_error: bool = False,
     ) -> bool:
@@ -104,16 +98,16 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
     async def get(
         self,
-        identifiers: Union[PydanticObjectId, int, str, Dict[str, Any], Tuple[Any]],
-        projection: "Optional[Iterable[TModelFields]]" = None,
+        identifiers: PydanticObjectId | int | str | dict[str, Any] | tuple[Any],
+        projection: "Iterable[TModelFields] | None" = None,
         *,
         should_error: bool = True,
-    ) -> Optional[TDocument]:
-        projection_dict: Optional[dict] = model_fields_to_projection(projection) if projection else None
+    ) -> TDocument | None:
+        projection_dict: dict | None = model_fields_to_projection(projection) if projection else None
         id_: Any = (
             PydanticObjectId.is_valid(identifiers) and PydanticObjectId(cast("Any", identifiers))
         ) or identifiers
-        model: Optional[TDocument] = await self.__model__.get(
+        model: TDocument | None = await self.__model__.get(
             id_,
             projection_model=create_subset_model(self.__model__, projection_dict) if projection_dict else None,
         )
@@ -122,13 +116,13 @@ class BaseMongoRepository(BaseRepository[TDocument]):
 
         return model
 
-    async def find_one(self, criteria: "BaseFindOperator") -> Optional[TDocument]:
+    async def find_one(self, criteria: "BaseFindOperator") -> TDocument | None:
         return await self.__model__.find_one(criteria)
 
     async def add(
         self,
         entity: TDocument,
-        session: "Optional[AsyncIOMotorClientSession]" = None,
+        session: "AsyncIOMotorClientSession | None" = None,
         **kwargs,
     ) -> TDocument:
         try:
@@ -139,14 +133,12 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             raise EntityNotFoundError(self.__model__, entity.id)
         return inserted
 
-    async def delete(self, id_: Union[str, PydanticObjectId], **_) -> None:
+    async def delete(self, id_: str | PydanticObjectId, **_) -> None:
         if isinstance(id_, str):
             id_ = PydanticObjectId(id_)
         await self.__model__.find_one(self.__model__.id == id_).delete()
 
-    async def _load_persisted(
-        self, id_: Union[PydanticObjectId, str], expected_id: Optional[PydanticObjectId]
-    ) -> TDocument:
+    async def _load_persisted(self, id_: PydanticObjectId | str, expected_id: PydanticObjectId | None) -> TDocument:
         if expected_id and str(id_) != str(expected_id):
             raise EntityNotFoundError(self.__model__, id_)
         oid = PydanticObjectId(id_) if isinstance(id_, str) else id_
@@ -158,10 +150,10 @@ class BaseMongoRepository(BaseRepository[TDocument]):
     # noinspection PyMethodOverriding
     async def patch(
         self,
-        id_: Union[PydanticObjectId, str],
+        id_: PydanticObjectId | str,
         partial: TDocument,
-        bulk_writer: Optional[BulkWriter] = None,
-    ) -> Optional[TDocument]:
+        bulk_writer: BulkWriter | None = None,
+    ) -> TDocument | None:
         """Partial update — only fields explicitly set on `partial` are written."""
         existing = await self._load_persisted(id_, partial.id)
         if PYDANTIC_V2:
@@ -177,10 +169,10 @@ class BaseMongoRepository(BaseRepository[TDocument]):
     # noinspection PyMethodOverriding
     async def replace(
         self,
-        id_: Union[PydanticObjectId, str],
+        id_: PydanticObjectId | str,
         entity: TDocument,
-        bulk_writer: Optional[BulkWriter] = None,
-    ) -> Optional[TDocument]:
+        bulk_writer: BulkWriter | None = None,
+    ) -> TDocument | None:
         """Full replacement — every field on the entity is written, defaults included."""
         existing = await self._load_persisted(id_, entity.id)
         if PYDANTIC_V2:
@@ -193,7 +185,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             raise EntityNotFoundError(self.__model__, id_) from e
         return existing
 
-    async def bulk_create(self, bulk: List[Document]) -> BulkResponseModel:
+    async def bulk_create(self, bulk: list[Document]) -> BulkResponseModel:
         bulk_copy = bulk.copy()
         try:
             insert_many_result = await self.__model__.insert_many(bulk_copy, ordered=False)
@@ -207,7 +199,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             for i in reversed_errors_indexes:
                 bulk_copy.pop(i)
 
-            find_queries: List["BaseFindOperator"]
+            find_queries: list[BaseFindOperator]
             if filter_by_uniq:
                 find_queries = _get_bulk_query_by_unique_index(self.__model__, bulk_copy, filter_by_uniq)
             else:
@@ -219,24 +211,24 @@ class BaseMongoRepository(BaseRepository[TDocument]):
                 find_queries = [self.__model__.id == item.id for item in bulk_copy]  # type: ignore[misc]
 
             if find_queries:
-                success_result: List[IdProjectedModel] = await self.__model__.find(
+                success_result: list[IdProjectedModel] = await self.__model__.find(
                     Or(*find_queries), projection_model=IdProjectedModel
                 ).to_list()
 
             else:
                 success_result = []
 
-            result: List[BulkResponseModelUnion] = [BulkItemSuccess(id=i.id) for i in success_result]
+            result: list[BulkResponseModelUnion] = [BulkItemSuccess(id=i.id) for i in success_result]
 
             for error_index, error_msg in error_indexes:
                 result.insert(error_index, BulkItemError(detail=f"mongodb: {error_msg}"))
 
             return BulkResponseModel(items=result, has_errors=True)
         else:
-            result: List[BulkItemSuccess] = [BulkItemSuccess(id=i) for i in insert_many_result.inserted_ids]
+            result: list[BulkItemSuccess] = [BulkItemSuccess(id=i) for i in insert_many_result.inserted_ids]
             return BulkResponseModel(items=result)
 
-    async def bulk_update(self, bulk: List[Document], *, upsert: bool = False) -> Any:
+    async def bulk_update(self, bulk: list[Document], *, upsert: bool = False) -> Any:
         async with BulkWriter() as bulk_writer:
             for i in bulk:
                 self.__model__.find_one(self.__model__.id == i.id).update(
@@ -246,15 +238,13 @@ class BaseMongoRepository(BaseRepository[TDocument]):
                 )
             return await bulk_writer.commit()
 
-    async def bulk_delete(self, bulk: List[Union[str, PydanticObjectId]]) -> Any:
+    async def bulk_delete(self, bulk: list[str | PydanticObjectId]) -> Any:
         async with BulkWriter() as bulk_writer:
             for i in bulk:
                 await self.__model__.find_one(self.__model__.id == i).delete(bulk_writer=bulk_writer)
             return await bulk_writer.commit()
 
-    async def bulk_upsert(
-        self, bulk: List[Document], upsert_factory: "Optional[Callable[..., TDocument]]" = None
-    ) -> Any:
+    async def bulk_upsert(self, bulk: list[Document], upsert_factory: "Callable[..., TDocument] | None" = None) -> Any:
         async with BulkWriter() as bulk_writer:
             for i in bulk:
                 # Beanie's upsert.on_insert is typed as a DocType, but this codebase
@@ -272,7 +262,7 @@ class BaseMongoRepository(BaseRepository[TDocument]):
             raise RuntimeError(f"{self.__model__.__name__} is not bound to a motor database")
         return await motor_db.client.start_session()
 
-    def query(self, query: Any = None, filter_: "Optional[BaseFindOperator]" = None, **kwargs) -> "FindMany":
+    def query(self, query: Any = None, filter_: "BaseFindOperator | None" = None, **kwargs) -> "FindMany":
         if not query:
             query = self.__model__.find()
         if filter_:

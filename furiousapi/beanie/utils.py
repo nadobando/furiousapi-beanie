@@ -10,20 +10,13 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
     Union,
     _SpecialForm,
     cast,
     get_args,
     get_origin,
 )
+from collections.abc import Callable, Sequence
 
 import furiousapi.pydantic
 from beanie import Document
@@ -49,7 +42,7 @@ if PYDANTIC_V2:
 
 
 def _get_bulk_query_by_unique_index(
-    model: Type[Document], bulk: list[Document], unique_index: IndexModel
+    model: type[Document], bulk: list[Document], unique_index: IndexModel
 ) -> list[BaseFindOperator]:
     key_doc = unique_index.document.get("key")
     if key_doc is None:
@@ -58,7 +51,7 @@ def _get_bulk_query_by_unique_index(
     return [And(*[getattr(model, key) == getattr(item, key) for key in unique_keys for item in bulk])]
 
 
-def gather_documents(*modules) -> Sequence[Type[DocType]]:
+def gather_documents(*modules) -> Sequence[type[DocType]]:
     """Returns a list of all MongoDB document models defined in `models` module."""
 
     result = []
@@ -72,18 +65,18 @@ def gather_documents(*modules) -> Sequence[Type[DocType]]:
 
 
 @lru_cache
-def get_model_field_hint(model: Type[DocType], attribute: Union[ExpressionField, str]) -> Union[type, GenericAlias]:
+def get_model_field_hint(model: type[DocType], attribute: ExpressionField | str) -> type | GenericAlias:
     return typing.get_type_hints(model)[attribute]
 
 
 MAPPING_ARG_COUNT = 2
 
 
-def _handle_annotated(args: Tuple, visit: Callable) -> Any:
+def _handle_annotated(args: tuple, visit: Callable) -> Any:
     return _walk_type_hint(args[0], visit)
 
 
-def _handle_union(args: Tuple, visit: Callable) -> Any:
+def _handle_union(args: tuple, visit: Callable) -> Any:
     for arg in args:
         if arg is not type(None):
             result = _walk_type_hint(arg, visit)
@@ -92,19 +85,19 @@ def _handle_union(args: Tuple, visit: Callable) -> Any:
     return None
 
 
-def _handle_iterable(args: Tuple, visit: Callable) -> Any:
+def _handle_iterable(args: tuple, visit: Callable) -> Any:
     if args:
         return _walk_type_hint(args[0], visit)
     return None
 
 
-def _handle_mapping(args: Tuple, visit: Callable) -> Any:
+def _handle_mapping(args: tuple, visit: Callable) -> Any:
     if len(args) == MAPPING_ARG_COUNT:
         return _walk_type_hint(args[1], visit)
     return None
 
 
-def _handle_generic_args(args: Tuple, visit: Callable) -> Any:
+def _handle_generic_args(args: tuple, visit: Callable) -> Any:
     for arg in args:
         result = _walk_type_hint(arg, visit)
         if result is not None:
@@ -112,7 +105,7 @@ def _handle_generic_args(args: Tuple, visit: Callable) -> Any:
     return None
 
 
-_HANDLER_MAP: Dict[Union[Type, _SpecialForm], Callable] = {
+_HANDLER_MAP: dict[type | _SpecialForm, Callable] = {
     Annotated: _handle_annotated,
     Union: _handle_union,
     list: _handle_iterable,
@@ -154,7 +147,7 @@ def _walk_type_hint(type_hint: Any, visit: Callable[[Any], Any]) -> Any:
 #     return bool(_walk_type_hint(type_hint, match_visitor))
 
 
-def _unwrap_type(type_hint: Any) -> Set[Type[Any]]:
+def _unwrap_type(type_hint: Any) -> set[type[Any]]:
     origin = get_origin(type_hint)
     args = get_args(type_hint)
 
@@ -177,7 +170,7 @@ def _unwrap_type(type_hint: Any) -> Set[Type[Any]]:
 
 
 @lru_cache
-def get_concrete_types(model: Type[BaseModel], field_name: str) -> Set[Type[Any]]:
+def get_concrete_types(model: type[BaseModel], field_name: str) -> set[type[Any]]:
     field = get_model_fields(model).get(field_name)
     if not field:
         raise AttributeError(model, field_name)
@@ -185,17 +178,17 @@ def get_concrete_types(model: Type[BaseModel], field_name: str) -> Set[Type[Any]
     return _unwrap_type(annotation)
 
 
-def expand_wildcard_projection(model: Type[BaseModel], tree: List[List]) -> List[List]:
-    def resolve_fields(m: Type[BaseModel]) -> List[str]:
+def expand_wildcard_projection(model: type[BaseModel], tree: list[list]) -> list[list]:
+    def resolve_fields(m: type[BaseModel]) -> list[str]:
         return list(get_model_fields(m).keys())
 
-    def get_submodel(model: Type[BaseModel], field: str) -> Optional[Type]:
+    def get_submodel(model: type[BaseModel], field: str) -> type | None:
         info = get_model_fields(model).get(field)
         if not info:
             return None
         return info.annotation if PYDANTIC_V2 else getattr(info, "type_", None)
 
-    expanded: List[List[Any]] = []
+    expanded: list[list[Any]] = []
 
     for branch in tree:
         head = branch[0]
@@ -245,8 +238,8 @@ def expand_wildcard_projection(model: Type[BaseModel], tree: List[List]) -> List
 
 
 @lru_cache
-def alias_to_field(model: Type[BaseModel]) -> Dict[str, Union[str, dict]]:
-    result: Dict[str, Union[str, dict]] = {}
+def alias_to_field(model: type[BaseModel]) -> dict[str, str | dict]:
+    result: dict[str, str | dict] = {}
     model_fields = get_model_fields(model)
 
     for name, field in model_fields.items():
@@ -270,11 +263,11 @@ def alias_to_field(model: Type[BaseModel]) -> Dict[str, Union[str, dict]]:
 @lru_cache
 def get_field(
     path: str,
-    model: Type[DocType],
-    before_field: Optional[ExpressionField] = None,
+    model: type[DocType],
+    before_field: ExpressionField | None = None,
     *,
     validate_fields: bool = True,
-) -> Tuple[Type[DocType], Optional[ExpressionField], str]:
+) -> tuple[type[DocType], ExpressionField | None, str]:
     if path == "*":
         return model, None, path
     if path.endswith(".*"):
@@ -300,12 +293,12 @@ def get_field(
             return model, getattr(before_field, field), path
         return model, cast("ExpressionField", field), path
 
-    expr_field: Optional[ExpressionField] = cast("Optional[ExpressionField]", field)
+    expr_field: ExpressionField | None = cast("ExpressionField | None", field)
     model_, before_field = _get_next_model_and_expr(model, expr_field, before_field)
     return get_field(next_, model_, before_field)  # type: ignore[arg-type]
 
 
-def _get_field_from_model(model: Type[DocType], root: str) -> Optional[Union[ExpressionField, str]]:
+def _get_field_from_model(model: type[DocType], root: str) -> ExpressionField | str | None:
     if issubclass(model, Document):
         try:
             return getattr(model, root)
@@ -318,10 +311,10 @@ def _get_field_from_model(model: Type[DocType], root: str) -> Optional[Union[Exp
 
 
 def _get_next_model_and_expr(
-    model: Type[DocType],
-    field: Optional[ExpressionField],
-    before_field: Optional[ExpressionField],
-) -> Tuple[Type[DocType], ExpressionField]:
+    model: type[DocType],
+    field: ExpressionField | None,
+    before_field: ExpressionField | None,
+) -> tuple[type[DocType], ExpressionField]:
     if field is None:
         raise ValueError("Cannot resolve next model from a None field")
     field_key = str(field)
@@ -333,15 +326,15 @@ def _get_next_model_and_expr(
         model_ = field_info_type(model.model_fields[field_key])
 
     expr = field if before_field is None else getattr(before_field, field_key)
-    return cast("Type[DocType]", model_), cast("ExpressionField", expr)
+    return cast("type[DocType]", model_), cast("ExpressionField", expr)
 
 
-Projection = Dict[str, Union[int, "Projection"]]
+Projection = dict[str, Union[int, "Projection"]]
 
 SUBSET_PREFIX = "__SubSetOf"
 
 
-def _resolve_subset_field_type(model: Type[Union[Document, BaseModel]], field_info: FieldInfo, field_name: str) -> Any:
+def _resolve_subset_field_type(model: type[Document | BaseModel], field_info: FieldInfo, field_name: str) -> Any:
     """Resolve the concrete python type for a projection-subset field.
 
     Checks beanie link fields first, then unwraps the annotation via pydantic v2's
@@ -361,7 +354,7 @@ def _resolve_subset_field_type(model: Type[Union[Document, BaseModel]], field_in
     return next(iter(concretes), None) or field_info.annotation
 
 
-def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Projection) -> Type[BaseModel]:
+def create_subset_model(model: type[Document | BaseModel], projection: Projection) -> type[BaseModel]:
     """
     Recursively create a subset of the given Pydantic model using the provided projection.
 
@@ -369,7 +362,7 @@ def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Pro
     :param projection: A dict defining which fields to include, with nested dicts for submodels.
     :return: A new Pydantic model class with only the selected fields.
     """
-    fields: Dict[str, Tuple[Any, Any]] = {}
+    fields: dict[str, tuple[Any, Any]] = {}
     model_fields = get_model_fields(model)
     aliases = alias_to_field(model)  # type: ignore[arg-type]
     for field_name_, proj in projection.items():
@@ -401,10 +394,10 @@ def create_subset_model(model: Type[Union[Document, BaseModel]], projection: Pro
     name = f"{SUBSET_PREFIX}{model.__name__}"
     # create_model's overloads don't accept arbitrary kwargs dict at the type
     # level; the (annotation, field_info) tuple-form is supported at runtime.
-    return create_model(name, __base__=BaseModel, **cast("Dict[str, Any]", fields))
+    return create_model(name, __base__=BaseModel, **cast("dict[str, Any]", fields))
 
 
-def get_projection(model: Type[ProjectionModelType]) -> Optional[Dict[str, Union[int, Dict[str, Any]]]]:
+def get_projection(model: type[ProjectionModelType]) -> dict[str, int | dict[str, Any]] | None:
     get_model_type = getattr(model, "get_model_type", None)
     if get_model_type is not None and (
         get_model_type() == ModelType.UnionDoc
@@ -419,7 +412,7 @@ def get_projection(model: Type[ProjectionModelType]) -> Optional[Dict[str, Union
     if get_config_value(model, "extra") == "allow":
         return None
 
-    document_projection: Dict[str, Any] = {}
+    document_projection: dict[str, Any] = {}
 
     for name, field in get_model_fields(model).items():
         alias = field.alias or name

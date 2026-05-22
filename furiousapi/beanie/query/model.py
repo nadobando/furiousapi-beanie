@@ -1,5 +1,4 @@
 import dataclasses
-from typing import Type, Optional
 
 from furiousapi.core.types import TEntity
 from furiousapi.rql.models import ModelRQL, TransformerConfig
@@ -9,10 +8,10 @@ from furiousapi.beanie.query.transform import MongoRQLTransform
 
 @dataclasses.dataclass
 class MongoTransformerConfig(TransformerConfig):
-    fetch_links: Optional[bool] = None
+    fetch_links: bool | None = None
 
 
 class RQLModelMongo(ModelRQL[TEntity]):
-    __model__: Type[TEntity]
+    __model__: type[TEntity]
     __transformer__ = MongoRQLTransform
     __transformer_params__: MongoTransformerConfig = MongoTransformerConfig()

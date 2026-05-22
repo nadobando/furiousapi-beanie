@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
+from typing import Any, Union, cast
 
 from beanie import Document
 from beanie import SortDirection
@@ -19,11 +19,11 @@ from furiousapi.beanie import utils
 from furiousapi.beanie.utils import get_field, create_subset_model
 
 LOGGER = logging.getLogger(__name__)
-RQLMongoProjection = Dict[str, Union[None, "RQLMongoProjection"]]
+RQLMongoProjection = dict[str, Union[None, "RQLMongoProjection"]]
 
 
 class MongoRQLTransform(BaseRQLModelTransform):
-    model: Type[Document]
+    model: type[Document]
 
     def __init__(self, *args, validate_fields: bool = True, fetch_links: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
@@ -34,7 +34,7 @@ class MongoRQLTransform(BaseRQLModelTransform):
         self.__alias_mapping__ = utils.alias_to_field(self.model)  # type: ignore[arg-type]
         self.__is_distinct__: bool = False
 
-    def listing(self, expression: Tuple[str, str, Any]) -> Union[Dict, In]:
+    def listing(self, expression: tuple[str, str, Any]) -> dict | In:
         op, field, values = super().listing(expression)
         _, field, _ = get_field(field, self.model, validate_fields=self.validate_fields)  # type: ignore[arg-type]
         if op == "__contains__":
@@ -42,16 +42,16 @@ class MongoRQLTransform(BaseRQLModelTransform):
 
         return {field: {f"${expression[0]}": values}}
 
-    def not_(self, expression: List) -> Not:
+    def not_(self, expression: list) -> Not:
         return Not(expression[0])
 
-    def and_(self, ops: List) -> And:
+    def and_(self, ops: list) -> And:
         return And(*ops)
 
-    def or_(self, ops: List) -> Or:
+    def or_(self, ops: list) -> Or:
         return Or(*ops)
 
-    def comp(self, c: List) -> BaseFindComparisonOperator:
+    def comp(self, c: list) -> BaseFindComparisonOperator:
         op, query_field, value = super().comp(c)
         model, field, path = get_field(query_field, self.model)  # type: ignore[arg-type]
         op = getattr(field, op)
@@ -72,7 +72,7 @@ class MongoRQLTransform(BaseRQLModelTransform):
 
         return op(value)
 
-    def searching(self, s: List) -> Dict[str, Any]:
+    def searching(self, s: list) -> dict[str, Any]:
         op, field, value = super().searching(s)
 
         if op == "like":
@@ -82,12 +82,12 @@ class MongoRQLTransform(BaseRQLModelTransform):
         raise NotImplementedError(op)
 
     @staticmethod
-    def _process_select(select_tree: RQLMongoProjection, model: Type[BaseModel]) -> RQLMongoProjection:  # noqa: C901
+    def _process_select(select_tree: RQLMongoProjection, model: type[BaseModel]) -> RQLMongoProjection:  # noqa: C901
 
-        def resolve_fields(m: Type[BaseModel]) -> List[str]:
+        def resolve_fields(m: type[BaseModel]) -> list[str]:
             return list(get_model_fields(m).keys())
 
-        def get_submodel(model: Type[Union[BaseModel, Document]], field: str) -> Optional[Type[BaseModel]]:
+        def get_submodel(model: type[BaseModel | Document], field: str) -> type[BaseModel] | None:
             if model is None:
                 raise AssertionError(field)
             field_info = get_model_field(model, field)
@@ -102,8 +102,8 @@ class MongoRQLTransform(BaseRQLModelTransform):
 
             return field_info_type(field_info)
 
-        def walk(path: List[str], subtree: RQLMongoProjection, model: Type[BaseModel]) -> Dict:
-            projection: Dict[str, Any] = {}
+        def walk(path: list[str], subtree: RQLMongoProjection, model: type[BaseModel]) -> dict:
+            projection: dict[str, Any] = {}
             for k, v in subtree.items():
                 head = k
                 children = v
@@ -126,11 +126,11 @@ class MongoRQLTransform(BaseRQLModelTransform):
 
         return walk([], select_tree, model)
 
-    def selection(self, s: List[Union[str, Dict]]) -> SelectedField:
+    def selection(self, s: list[str | dict]) -> SelectedField:
         selected: SelectedField = super().selection(s)
         return self._process_select(cast("RQLMongoProjection", selected), self.model)
 
-    def sign_prop(self, s: List[Union[Token, str]]) -> List[Union[str, SortDirection]]:
+    def sign_prop(self, s: list[Token | str]) -> list[str | SortDirection]:
         field, direction = super().sign_prop(s)
         _, expr_field, _ = get_field(field, self.model)  # type: ignore[arg-type]
         return direction(expr_field)
@@ -158,7 +158,7 @@ class MongoRQLTransform(BaseRQLModelTransform):
             # create_subset_model returns BaseModel; beanie's project() narrows
             # its signature to Document. The dynamic subset model functions as a
             # projection class regardless of its declared base.
-            query = query.project(cast("Type[Document]", returned_model))
+            query = query.project(cast("type[Document]", returned_model))
 
         if self.__sorting_fields__:
             query = query.sort(*self.__sorting_fields__)

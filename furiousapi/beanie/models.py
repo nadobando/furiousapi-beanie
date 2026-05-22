@@ -4,7 +4,8 @@ import inspect
 import logging
 import typing
 from types import GenericAlias
-from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Any, Optional
+from collections.abc import Iterator
 
 from beanie.odm.utils.pydantic import get_extra_field_info
 from furiousapi.pydantic import PYDANTIC_V2, get_model_fields
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class BeanieAllOptionalMeta(ModelMetaclass):
-    def __new__(mcs, name: str, bases: Tuple[type], namespaces: Dict[str, Any], **kwargs) -> Any:
+    def __new__(mcs, name: str, bases: tuple[type], namespaces: dict[str, Any], **kwargs) -> Any:
         _convert_pydantic(name, namespaces, bases)
         new = super().__new__(mcs, name, bases, namespaces, **kwargs)
         _remove_extra_data_from_signature(new)
@@ -41,7 +42,7 @@ class BeanieAllOptionalMeta(ModelMetaclass):
     @staticmethod
     def _convert_beanie(name: str, namespaces: dict, bases: tuple) -> None:
         annotations: dict[str, Any] = namespaces.get(ANNOTATIONS, {})
-        annotations["id"] = Optional[PydanticObjectId]
+        annotations["id"] = Optional[PydanticObjectId]  # noqa: UP007,UP045
         _convert_pydantic(name, namespaces, bases)
         for base in bases:
             for base_ in base.__mro__:
@@ -62,17 +63,17 @@ class BeanieAllOptionalMeta(ModelMetaclass):
         for field in annotations:
             if field.startswith("__") or field in filter_:
                 continue
-            annotations[field] = Optional[annotations[field]]
+            annotations[field] = Optional[annotations[field]]  # noqa: UP007,UP045
 
         namespaces[ANNOTATIONS] = annotations
 
     @classmethod
     def flatten_fields(  # noqa: C901, PLR0912
         mcs,
-        model: Type[BaseModel],
-        prefix: Optional[str] = None,
-        alias_prefix_: Optional[str] = None,
-        result: Optional[list] = None,
+        model: type[BaseModel],
+        prefix: str | None = None,
+        alias_prefix_: str | None = None,
+        result: list | None = None,
     ) -> list:
         result = result or []
         cls_params = dict(model.__signature__.parameters)
@@ -166,8 +167,8 @@ class BeanieAllOptionalMeta(ModelMetaclass):
 
     @classmethod
     def handle_list(
-        mcs, alias_name: str, param_name: str, origin: Union[Type, GenericAlias]
-    ) -> Iterator[tuple[Type[BaseModel], str, str]]:
+        mcs, alias_name: str, param_name: str, origin: type | GenericAlias
+    ) -> Iterator[tuple[type[BaseModel], str, str]]:
         for arg in typing.get_args(origin):
             if inspect.isclass(arg) and issubclass(arg, BaseModel):
                 yield arg, param_name, alias_name
@@ -177,12 +178,12 @@ class BeanieAllOptionalMeta(ModelMetaclass):
     @classmethod
     def handle_union(
         mcs,
-        model: Type[BaseModel],
+        model: type[BaseModel],
         model_field: ModelField,
         alias_name: str,
         param_name: str,
         parameter: inspect.Parameter,
-    ) -> Tuple[list, list[Tuple[Type[BaseModel], str, str]]]:
+    ) -> tuple[list, list[tuple[type[BaseModel], str, str]]]:
         """
         Handles union types in a Pydantic model.
 

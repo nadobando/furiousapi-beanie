@@ -21,7 +21,7 @@ class InnerDoc(BaseModel):
 
 
 class Foreign(Document):
-    name: Optional[str] = Field(None)
+    name: str | None = Field(None)
     inner: Optional["InnerDoc"] = None
     _document_settings = DocumentSettings(use_revision=False, name="foreign")
 
@@ -33,14 +33,14 @@ class OneToMany(Document):
 
 
 class MyModel(Document):
-    created_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime | None = None
     another_id: int
     int_number: int
     float_number: int
     is_boolean: bool
-    nullable: Optional[int] = None
-    foreign: Optional[Link[Foreign]] = None
-    inner: Optional[InnerDoc] = None
+    nullable: int | None = None
+    foreign: Link[Foreign] | None = None
+    inner: InnerDoc | None = None
 
     _document_settings = DocumentSettings(use_revision=True, name="my_model")
 

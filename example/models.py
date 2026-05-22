@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional, List
 
 from beanie import Document, Link, PydanticObjectId
 from furiousapi.pydantic import PYDANTIC_V2
@@ -18,7 +17,7 @@ class BaseReview(BaseModel):
 
 class Item(Document):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     details: Details
 
 
@@ -41,7 +40,7 @@ class ReviewCreate(BaseReview):
 
 class BaseItem(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ItemCreate(BaseItem):
@@ -51,7 +50,7 @@ class ItemCreate(BaseItem):
 class ItemRead(BaseItem):
     id: PydanticObjectId
     # Note: Reviews are not embedded by default; you would populate them manually
-    reviews: Optional[List[ReviewItemRead]] = None
+    reviews: list[ReviewItemRead] | None = None
 
 
 if PYDANTIC_V2:

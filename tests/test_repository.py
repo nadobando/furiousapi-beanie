@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import beanie
 import pytest
@@ -31,7 +31,7 @@ class MyModel(Document):
     int_number: int
     float_number: int
     is_boolean: bool
-    nullable: Optional[int] = None
+    nullable: int | None = None
 
     class Settings:
         name = "my_model"
@@ -259,7 +259,7 @@ async def init_data(_init_my_model: None, request: FixtureRequest):
 @pytest.mark.asyncio
 async def test_list_with_sorting_and_filter(
     limit: int,
-    sorting: List[Tuple[str, str]],
+    sorting: list[tuple[str, str]],
     filtering: dict[str, Any],
     expected: list[int],
 ):
